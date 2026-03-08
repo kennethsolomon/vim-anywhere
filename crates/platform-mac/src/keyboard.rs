@@ -3,12 +3,6 @@ use core_graphics::event_source::CGEventSource;
 use core_graphics::event_source::CGEventSourceStateID;
 use vim_anywhere_core::parser::{Key, KeyEvent, Modifier};
 
-#[derive(Debug)]
-pub enum InterceptorCommand {
-    Suppress,
-    PassThrough,
-}
-
 pub fn cgevent_flags_to_modifiers(flags: CGEventFlags) -> Vec<Modifier> {
     let mut mods = vec![];
     if flags.contains(CGEventFlags::CGEventFlagShift) {

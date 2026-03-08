@@ -7,16 +7,10 @@ use std::ptr;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXUIElementCreateSystemWide() -> *mut c_void;
-    fn AXUIElementCreateApplication(pid: i32) -> *mut c_void;
     fn AXUIElementCopyAttributeValue(
         element: *mut c_void,
         attribute: *const c_void,
         value: *mut *mut c_void,
-    ) -> i32;
-    fn AXUIElementSetAttributeValue(
-        element: *mut c_void,
-        attribute: *const c_void,
-        value: *const c_void,
     ) -> i32;
     fn AXIsProcessTrusted() -> bool;
 }

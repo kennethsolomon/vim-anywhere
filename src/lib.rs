@@ -412,7 +412,7 @@ impl Engine {
         buffer: &mut InMemoryBuffer,
     ) {
         let pos = buffer.get_cursor();
-        let end_line = (pos.line + count - 1).min(buffer.line_count().saturating_sub(1));
+        let end_line = (pos.line + count.max(1) - 1).min(buffer.line_count().saturating_sub(1));
         let start = CursorPosition::new(pos.line, 0);
 
         let end = if end_line + 1 < buffer.line_count() {
@@ -490,11 +490,12 @@ impl Engine {
     fn toggle_case(&mut self, buffer: &mut InMemoryBuffer) {
         let pos = buffer.get_cursor();
         if let Some(ch) = buffer.char_at(pos) {
-            let toggled: String = if ch.is_uppercase() {
-                ch.to_lowercase().collect()
+            let toggled = if ch.is_uppercase() {
+                ch.to_lowercase().next().unwrap_or(ch)
             } else {
-                ch.to_uppercase().collect()
-            };
+                ch.to_uppercase().next().unwrap_or(ch)
+            }
+            .to_string();
             let end = CursorPosition::new(pos.line, pos.col + 1);
             buffer.replace_range(pos, end, &toggled);
             buffer.set_cursor(CursorPosition::new(
@@ -555,8 +556,10 @@ impl Engine {
                         CursorPosition::new(pos.line, len)
                     };
                     let content = if pos.line + 1 >= buffer.line_count() {
-                        if entry.content.ends_with('\n') {
+                        if entry.content.ends_with('\n') && entry.content.len() > 1 {
                             format!("\n{}", &entry.content[..entry.content.len() - 1])
+                        } else if entry.content.ends_with('\n') {
+                            "\n".to_string()
                         } else {
                             format!("\n{}", entry.content)
                         }

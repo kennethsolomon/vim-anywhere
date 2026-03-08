@@ -13,8 +13,8 @@
 | 6 | /write-tests | done | 108 new tests (66 core + 42 engine), 205 total passing |
 | 7 | /commit | done | 58673e2 — test suite commit |
 | 8 | /debug | skipped | user skipped to security-check |
-| 9 | /security-check | >> next << | attempt 1: 0 critical, 2 high, 3 medium, 4 low |
-| 10 | /commit | not yet | conditional |
+| 9 | /security-check | done | attempt 1: 9 findings, all fixed |
+| 10 | /commit | done | 0f75226 — security fixes |
 | 11 | /review | not yet | loop until 0 issues |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |

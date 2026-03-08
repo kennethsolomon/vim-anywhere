@@ -39,7 +39,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     const mode = await invoke("get_mode");
     updateModeDisplay(mode);
-  } catch (e) {}
+  } catch (e) { console.warn("Failed to get mode:", e); }
 
   await listen("mode-changed", (event) => {
     updateModeDisplay(event.payload.mode);
@@ -75,11 +75,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Map radio to config fields
     let method = selected === "custom" ? "custom" : "escape";
     let doubleEsc = selected === "double-escape";
+    let smartEsc = selected === "escape";
     const customSeq = customSeqInput ? customSeqInput.value || null : null;
     await invoke("set_mode_entry", {
       method,
       customSequence: customSeq,
       doubleEscape: doubleEsc,
+      smartEscape: smartEsc,
     });
   }
 
@@ -222,12 +224,23 @@ window.addEventListener("DOMContentLoaded", async () => {
       const m = mappings[i];
       const row = document.createElement("div");
       row.className = "mapping-row";
-      row.innerHTML = `
-        <span>${m.mode}</span>
-        <span class="mono">${m.from}</span>
-        <span class="mono">${m.to}</span>
-        <button class="btn-delete" data-index="${i}" title="Remove">x</button>
-      `;
+      const modeSpan = document.createElement("span");
+      modeSpan.textContent = m.mode;
+      const fromSpan = document.createElement("span");
+      fromSpan.className = "mono";
+      fromSpan.textContent = m.from;
+      const toSpan = document.createElement("span");
+      toSpan.className = "mono";
+      toSpan.textContent = m.to;
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn-delete";
+      delBtn.dataset.index = i;
+      delBtn.title = "Remove";
+      delBtn.textContent = "x";
+      row.appendChild(modeSpan);
+      row.appendChild(fromSpan);
+      row.appendChild(toSpan);
+      row.appendChild(delBtn);
       mappingsList.appendChild(row);
     }
 
@@ -330,15 +343,27 @@ window.addEventListener("DOMContentLoaded", async () => {
     for (const app of apps) {
       const row = document.createElement("div");
       row.className = "app-row";
-      row.innerHTML = `
-        <span title="${app.bundle_id}">${app.name}</span>
-        <select class="select-field app-strategy-select" data-bundle="${app.bundle_id}">
-          <option value="accessibility" ${app.strategy === "Accessibility" ? "selected" : ""}>Accessibility</option>
-          <option value="keyboard" ${app.strategy === "Keyboard" ? "selected" : ""}>Keyboard</option>
-          <option value="disabled" ${app.strategy === "Disabled" ? "selected" : ""}>Disabled</option>
-        </select>
-        <span><span class="status-dot ${app.status_class}"></span> ${app.status}</span>
-      `;
+      const nameSpan = document.createElement("span");
+      nameSpan.title = app.bundle_id;
+      nameSpan.textContent = app.name;
+      const select = document.createElement("select");
+      select.className = "select-field app-strategy-select";
+      select.dataset.bundle = app.bundle_id;
+      for (const [val, label] of [["accessibility", "Accessibility"], ["keyboard", "Keyboard"], ["disabled", "Disabled"]]) {
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = label;
+        if (app.strategy === label) opt.selected = true;
+        select.appendChild(opt);
+      }
+      const statusSpan = document.createElement("span");
+      const dot = document.createElement("span");
+      dot.className = "status-dot " + app.status_class;
+      statusSpan.appendChild(dot);
+      statusSpan.appendChild(document.createTextNode(" " + app.status));
+      row.appendChild(nameSpan);
+      row.appendChild(select);
+      row.appendChild(statusSpan);
       appTable.appendChild(row);
     }
 
@@ -353,17 +378,22 @@ window.addEventListener("DOMContentLoaded", async () => {
           "span:last-child .status-dot"
         );
         const textNode = e.target.parentElement.querySelector("span:last-child");
-        if (statusSpan) {
-          statusSpan.className = "status-dot";
+        if (textNode) {
+          textNode.textContent = "";
+          const newDot = document.createElement("span");
+          newDot.className = "status-dot";
           if (strategy === "accessibility") {
-            statusSpan.classList.add("active");
-            textNode.innerHTML = `<span class="status-dot active"></span> supported`;
+            newDot.classList.add("active");
+            textNode.appendChild(newDot);
+            textNode.appendChild(document.createTextNode(" supported"));
           } else if (strategy === "keyboard") {
-            statusSpan.classList.add("partial");
-            textNode.innerHTML = `<span class="status-dot partial"></span> partial`;
+            newDot.classList.add("partial");
+            textNode.appendChild(newDot);
+            textNode.appendChild(document.createTextNode(" partial"));
           } else {
-            statusSpan.classList.add("inactive");
-            textNode.innerHTML = `<span class="status-dot inactive"></span> excluded`;
+            newDot.classList.add("inactive");
+            textNode.appendChild(newDot);
+            textNode.appendChild(document.createTextNode(" excluded"));
           }
         }
       });
@@ -405,7 +435,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         ? "granted"
         : "not granted";
     }
-  } catch (e) {}
+  } catch (e) { console.warn("Failed to get permissions:", e); }
 
   // ── Open Privacy Settings button ──────────────────────────────────────
   const openPrivacyBtn = document.getElementById("open-privacy-settings");

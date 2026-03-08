@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 use tauri::tray::TrayIconBuilder;
@@ -134,11 +135,12 @@ fn save_config_full(state: tauri::State<'_, Arc<AppState>>, config: Config) -> b
 }
 
 #[tauri::command]
-fn set_mode_entry(state: tauri::State<'_, Arc<AppState>>, method: String, custom_sequence: Option<String>, double_escape: bool) -> bool {
+fn set_mode_entry(state: tauri::State<'_, Arc<AppState>>, method: String, custom_sequence: Option<String>, double_escape: bool, smart_escape: bool) -> bool {
     let mut cfg = state.config.lock().unwrap();
     cfg.mode_entry.method = method;
     cfg.mode_entry.custom_sequence = custom_sequence;
     cfg.mode_entry.double_escape_sends_real = double_escape;
+    cfg.mode_entry.smart_escape = smart_escape;
     let mode_entry = config_to_mode_entry(&cfg);
     let save_result = cfg.save().is_ok();
     drop(cfg);
@@ -494,6 +496,22 @@ fn apply_buffer_to_ax(
     }
 }
 
+/// Make a window visible on all macOS Spaces (desktops).
+#[cfg(target_os = "macos")]
+fn set_all_spaces(window: &tauri::WebviewWindow) {
+    use cocoa::base::id;
+    use objc::{msg_send, sel, sel_impl};
+    if let Ok(ns_win) = window.ns_window() {
+        unsafe {
+            let ns_window = ns_win as id;
+            // NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
+            // NSWindowCollectionBehaviorStationary = 1 << 4
+            let behavior: u64 = (1 << 0) | (1 << 4);
+            let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
+        }
+    }
+}
+
 // ── App entry point ─────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -586,7 +604,6 @@ pub fn run() {
             // ── Overlay window ─────────────────────────────────────────
             {
                 let cfg = state.config.lock().unwrap();
-                let show_overlay = cfg.show_overlay;
                 let overlay_pos = cfg.overlay_position.clone();
                 drop(cfg);
 
@@ -622,21 +639,8 @@ pub fn run() {
 
                 if let Ok(overlay) = builder.build() {
                     let _ = overlay.set_ignore_cursor_events(true);
-                    // Make visible on all Spaces (macOS)
                     #[cfg(target_os = "macos")]
-                    {
-                        use cocoa::base::id;
-                        use objc::{msg_send, sel, sel_impl};
-                        if let Ok(ns_win) = overlay.ns_window() {
-                            unsafe {
-                                let ns_window = ns_win as id;
-                                // NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
-                                // NSWindowCollectionBehaviorStationary = 1 << 4
-                                let behavior: u64 = (1 << 0) | (1 << 4);
-                                let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
-                            }
-                        }
-                    }
+                    set_all_spaces(&overlay);
                 }
             }
 
@@ -692,17 +696,7 @@ pub fn run() {
                         {
                             let _ = dim_win.set_ignore_cursor_events(true);
                             #[cfg(target_os = "macos")]
-                            {
-                                use cocoa::base::id;
-                                use objc::{msg_send, sel, sel_impl};
-                                if let Ok(ns_win) = dim_win.ns_window() {
-                                    unsafe {
-                                        let ns_window = ns_win as id;
-                                        let behavior: u64 = (1 << 0) | (1 << 4);
-                                        let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
-                                    }
-                                }
-                            }
+                            set_all_spaces(&dim_win);
                         }
                     }
                 }
@@ -733,17 +727,7 @@ pub fn run() {
                     {
                         let _ = border_win.set_ignore_cursor_events(true);
                         #[cfg(target_os = "macos")]
-                        {
-                            use cocoa::base::id;
-                            use objc::{msg_send, sel, sel_impl};
-                            if let Ok(ns_win) = border_win.ns_window() {
-                                unsafe {
-                                    let ns_window = ns_win as id;
-                                    let behavior: u64 = (1 << 0) | (1 << 4);
-                                    let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
-                                }
-                            }
-                        }
+                        set_all_spaces(&border_win);
                     }
                 }
             }
@@ -919,7 +903,16 @@ pub fn run() {
 
                     // Auto-reset to Insert mode when focused element changes
                     {
-                        let element_id = element.as_ptr() as usize;
+                        // Use AX role + description as a stable identity proxy.
+                        // Raw AXUIElement pointers are not guaranteed stable across queries.
+                        let element_id = {
+                            let role = accessibility::get_ax_role(&element).unwrap_or_default();
+                            let desc = accessibility::get_ax_attribute_string(&element, "AXDescription").unwrap_or_default();
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            role.hash(&mut hasher);
+                            desc.hash(&mut hasher);
+                            hasher.finish()
+                        } as usize;
                         let app_bundle = app_detection::get_frontmost_app()
                             .map(|a| a.bundle_id)
                             .unwrap_or_default();

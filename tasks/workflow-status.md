@@ -15,7 +15,7 @@
 | 8 | /debug | skipped | user skipped to security-check |
 | 9 | /security-check | done | attempt 1: 9 findings, all fixed |
 | 10 | /commit | done | 0f75226 — security fixes |
-| 11 | /review | not yet | loop until 0 issues |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
-| 14 | /release | not yet | optional |
+| 11 | /review | done | attempt 1: 4 warnings + 4 nitpicks, all fixed |
+| 12 | /commit | done | c53b2fe — review fixes |
+| 13 | /finish-feature | done | branch created, CHANGELOG updated, 192 tests pass, no remote for PR |
+| 14 | /release | >> next << | optional |

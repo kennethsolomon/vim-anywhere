@@ -1,139 +1,79 @@
-# Findings — 2026-03-08 — vim-anywhere
+# Findings — 2026-03-09 — Seamless macOS Integration
 
-## Requirements
-- Clone all features of kindaVim (macOS Vim motions app)
-- Cross-platform goal (macOS first, then Linux, Windows)
-- All ~160+ Vim motions from day one
-- Both strategies: Accessibility Strategy + Keyboard Strategy fallback
-- Personal/open-source project
-- Near-zero keystroke latency is critical
+## Problem Statement
 
-## What We're Building
-A system-level app that intercepts keyboard input globally and translates it into Vim motions across any macOS application — text fields, text areas, dropdowns, lists, menus, and non-text UI elements.
+vim-anywhere has three major seamlessness issues plus UX gaps:
 
-## Repo / Stack Notes
-- **Language:** Rust
-- **Architecture:** Monorepo with multiple crates (core library + platform shells)
-- **UI Framework:** Tauri (settings window, overlay/characters window)
-- **macOS APIs:** CGEvent tap (keyboard interception), AXUIElement (Accessibility), objc2/core-graphics crates
-- **Future platforms:** Linux (X11/Wayland + AT-SPI), Windows (Win32 hooks + UIA)
+1. **Escape requires double-press** — `double_escape_sends_real` is on by default. First Escape goes to Normal, second sends real Escape. Users expect: one Escape = Normal if in other mode, real Escape if already in Normal.
+2. **Active everywhere, even where it shouldn't be** — intercepts keys in non-text elements, terminal emulators (Kitty, iTerm2, etc.), and contexts where Vim bindings make no sense.
+3. **No auto-detection of text field focus** — starts in Normal mode globally, so clicking into a text field and typing doesn't work until you press `i`.
+4. **Mode indicator is unclear** — hard to tell what mode you're in, no feedback on mode change.
+5. **No visual focus indication** — no way to tell which app/window vim-anywhere is actively controlling.
 
-## Architecture — Approach B: Rust Core Library + Platform Shells
+## Chosen Approach: Full Seamless Package (Approach C + Focus Highlight)
 
-```
-vim-anywhere/
-├── crates/
-│   ├── core/            # Vim engine, motions, state machine, text objects (pure Rust, no OS deps)
-│   ├── platform-mac/    # CGEvent tap, AXUIElement, macOS Accessibility
-│   ├── platform-linux/  # (future) X11/Wayland input, AT-SPI accessibility
-│   └── platform-win/    # (future) Win32 low-level hooks, UIA
-├── src/                 # Binary entry point, wires platform + core
-└── ui/                  # Tauri app — settings, overlay characters window, focus highlight
-```
+### 1. Smart Escape (context-aware single Escape)
 
-### Core Engine (crates/core/)
-Pure Rust, zero platform dependencies. Contains:
-- **Mode state machine:** Normal, Insert, Visual (Characterwise), Visual (Linewise)
-- **Motion parser:** Handles counts, operators, motions, text objects (e.g., `3ciw`, `d2f"`)
-- **~160+ motions** organized by category (see full list below)
-- **Text manipulation engine:** Operates on a text buffer abstraction
-- **Clipboard/register management:** Yank/paste with characterwise vs linewise tracking
+- **Insert/Visual mode + Escape** → transition to Normal mode (suppress Escape)
+- **Normal mode + Escape** → pass through as real Escape to the app
+- Remove `double_escape_sends_real` as the default behavior (can remain as opt-in config)
+- Affected files: `crates/core/src/modes.rs` (ModeStateMachine.handle_escape), `ui/src-tauri/src/lib.rs` (event handler)
 
-### Platform Layer (crates/platform-mac/)
-Thin OS-specific code behind a shared trait:
-- **KeyboardInterceptor trait** — CGEvent tap on macOS
-- **AccessibilityProvider trait** — AXUIElement on macOS (read cursor, selection, text; apply edits)
-- **KeyboardStrategy fallback** — Simulate macOS shortcuts (Cmd+A, arrow keys, etc.) when Accessibility unavailable
-- **App detection** — Identify active app, determine which strategy to use
+### 2. Terminal Emulator Exclusion
 
-### UI Layer (ui/)
-Tauri-based:
-- **Characters window** — Floating overlay showing current mode/pending command
-- **Focus highlighting** — Visual border on active window
-- **Settings/Preferences** — Mode entry config, per-app settings, custom mappings
-- **The Wizard** — App compatibility checker
+- Maintain a list of known terminal bundle IDs to fully exclude:
+  - `net.kovidgoyal.kitty`, `com.apple.Terminal`, `com.googlecode.iterm2`, `dev.warp.Warp-Stable`, `io.alacritty`, `com.github.wez.wezterm`, `co.zeit.hyper`
+- Full passthrough when frontmost app is a terminal — vim-anywhere is invisible
+- Make the exclusion list configurable via user config
+- Affected files: `crates/platform-mac/src/app_detection.rs`, `crates/core/src/config.rs`
 
-## Decisions
+### 3. Text-Field Scoping
+
+- When focused element is NOT a text field → full passthrough of everything (including Escape)
+- vim-anywhere is completely invisible outside text fields
+- Current behavior already checks `is_editable_text()` but still suppresses Escape in non-text contexts — fix this
+- Affected files: `ui/src-tauri/src/lib.rs` (Normal/Visual mode handler, lines ~665-698)
+
+### 4. Auto-Insert on Text Field Focus
+
+- When user clicks/tabs into a text field → start in Insert mode (typing just works)
+- When leaving a text field → reset to Insert mode so next field entry is seamless
+- Detection via AX notifications (kAXFocusedUIElementChangedNotification) or polling focused element
+- Affected files: `ui/src-tauri/src/lib.rs`, `crates/platform-mac/src/accessibility.rs`
+
+### 5. Improved Mode Overlay
+
+- **Auto-hide in Insert mode** — overlay only visible in Normal/Visual mode (when vim is intercepting)
+- **Flash on mode change** — brief highlight/animation when switching modes for clear feedback
+- **Color-coded modes** — distinct colors per mode (e.g., green=Normal, orange/yellow=Visual, hidden=Insert)
+- **Pending key display** — show partial commands (`d` waiting for motion, count `3` being typed)
+- Affected files: `ui/src/` (HTML/CSS/JS overlay), `ui/src-tauri/src/lib.rs` (mode notification)
+
+### 6. Window Focus Highlight
+
+- **Border glow** on the active window when vim-anywhere is intercepting (Normal/Visual mode only)
+- **Slight dim** on other windows simultaneously
+- Subtle, not overdone — thin border (2-3px), low-opacity dim
+- Window-level granularity (not text-field level) for reliability
+- Hidden in Insert mode (same as overlay) — only shows when vim is "active"
+- Implementation: transparent borderless overlay window positioned over the active window via AX position/size queries, or Core Graphics window compositing
+- Affected files: `ui/src-tauri/src/` (new overlay window management), `crates/platform-mac/src/accessibility.rs` (window position queries)
+
+## Key Decisions
+
 | Decision | Rationale |
 |----------|-----------|
-| Rust over Swift | Cross-platform from day one; no rewrite tax; zero-GC latency |
-| Approach B (core lib + shells) | Vim engine is 70%+ of work, pure logic, write-once; platform layer is thin |
-| Tauri over Electron | ~10MB vs ~150MB; Rust backend integration is native |
-| All motions from start | User is experienced Vim user, partial support would be frustrating |
-| Both strategies | Accessibility for precision, Keyboard for universal fallback |
-
-## Modes
-1. **Normal Mode** — Full Vim navigation and editing
-2. **Insert Mode** — Pass-through typing to active app
-3. **Visual Mode (Characterwise)** — Character-level selection
-4. **Visual Mode (Linewise)** — Line-level selection
-
-## Normal Mode Entry Options
-- `Esc` key (default)
-- Double `Esc` (sends real escape to app)
-- Custom two-letter sequences (e.g., `jk`)
-- `Control-[`
-- Configurable modifier-based entry
-
-## Complete Motion List (from kindaVim)
-
-### Normal Mode (~160+ moves)
-
-**Basic Navigation:** `h`, `j`, `k`, `l`, `0`, `$`, `^`, `_`, `-`, `w`, `W`, `b`, `B`, `e`, `E`, `ge`, `gE`, `f{char}`, `F{char}`, `t{char}`, `T{char}`, `;`, `,`, `return`, `/{pattern}`, `?{pattern}`, `n`, `N`, `G`, `gg`, `H`, `L`, `M`
-
-**Display/Soft Navigation:** `g0`, `g$`, `g^`, `g_`, `gj`, `gk`, `gm`, `gI`
-
-**Scrolling:** `Ctrl-b`, `Ctrl-d`, `Ctrl-f`, `Ctrl-u`, `zt`, `zz`, `zb`, `z.`, `z-`, `z<Return>`
-
-**Entering Insert Mode:** `a`, `A`, `i`, `I`, `o`, `O`
-
-**Single-char Editing:** `r{char}`, `~`, `J`, `p`, `P`, `gx`
-
-**Indentation:** `<<`, `>>`
-
-**Change (c) + motion:** `cc`, `c$`, `c0`, `cb`, `cB`, `ce`, `cE`, `cf`, `cF`, `cG`, `ch`, `cj`, `ck`, `cl`, `ct`, `cT`, `cw`, `cW`, `cg$`, `cg0`, `cgg`
-
-**Change (c) + text objects:** `ciw`, `ciW`, `cib`, `ciB`, `cip`, `cis`, `ci"`, `ci'`, `ci[`, `ci<`, `` ci` ``, `caw`, `caW`, `cab`, `caB`, `cap`, `cas`, `ca"`, `ca'`, `ca[`, `ca<`, `` ca` ``
-
-**Delete (d) + motion:** `dd`, `d$`, `d0`, `db`, `dB`, `de`, `dE`, `df`, `dF`, `dG`, `dh`, `dj`, `dk`, `dl`, `dt`, `dT`, `dw`, `dW`, `dg$`, `dg0`, `dgg`
-
-**Delete (d) + text objects:** `diw`, `diW`, `dib`, `diB`, `dip`, `dis`, `di"`, `di'`, `di[`, `di<`, `` di` ``, `daw`, `daW`, `dab`, `daB`, `dap`, `das`, `da"`, `da'`, `da[`, `da<`, `` da` ``
-
-**Yank (y) + motion:** `yy`, `y$`, `y0`, `yf`, `yF`, `yh`, `yl`, `yt`, `yT`, `yg$`, `yg0`
-
-**Yank (y) + text objects:** `yiw`, `yiW`, `yib`, `yiB`, `yip`, `yis`, `yi"`, `yi'`, `yi[`, `yi<`, `` yi` ``, `yaw`, `yaW`, `yab`, `yaB`, `yap`, `yas`, `ya"`, `ya'`, `ya[`, `ya<`, `` ya` ``
-
-**Block/Bracket Navigation:** `%`, `(`, `)`, `{`, `}`, `[(`, `[{`, `])`, `]}`
-
-### Visual Mode — Characterwise
-
-**Navigation:** `h`, `j`, `k`, `l`, `0`, `$`, `^`, `_`, `-`, `w`, `W`, `b`, `B`, `e`, `E`, `f`, `F`, `t`, `T`, `;`, `,`, `(`, `)`, `{`, `}`, `return`, `g_`, `G`, `g$`, `ge`, `gE`, `gg`, `gI`, `gj`, `gk`
-
-**Text Objects:** `iw`, `iW`, `ip`, `ap`, `ib`, `iB`, `i"`, `i'`, `i[`, `i<`, `` i` ``, `ab`, `aB`, `a"`, `a'`, `a[`, `a<`, `` a` ``
-
-**Operations:** `c`, `d`, `y`, `o`, `v`, `V`, `escape`, `<`, `>`, `~`, `C`, `D`, `gx`, `R`, `S`, `u`, `U`, `Y`
-
-### Visual Mode — Linewise
-Same navigation and text objects as Characterwise, plus linewise-specific behavior for operations.
-
-## UI Features
-- **Characters Window:** Floating overlay showing pending keys and current mode
-- **Configurable size** or fully hidden
-- **Focus highlighting:** Border/highlight on active window
-- **The Wizard:** Per-app compatibility checker and strategy selector
-- **Count display:** Shows numeric prefix as it's typed
-- **Per-app JSON config:** Enable/disable strategies, custom mappings per app
-- **Custom key mappings:** User-defined remaps
-- **Preference syncing:** Across machines
+| Single Escape = context-aware | Matches user expectation: Escape exits modes, or acts as real Escape in Normal |
+| `double_escape_sends_real` off by default | Source of confusion; opt-in for power users who want it |
+| Auto-Insert on focus | "Click and type" is the universal expectation; Vim mode is opt-in via Escape |
+| Terminal full exclusion | Terminals have their own Vim; intercepting breaks everything |
+| Overlay hidden in Insert mode | Insert = transparent typing; no distraction needed |
+| Focus highlight in Normal/Visual only | Signals "vim is controlling this" without distracting during regular typing |
+| Window-level highlight | Reliable across all apps; text-field-level is fragile |
 
 ## Open Questions
-- Tauri overlay window: need to verify Tauri can create always-on-top, click-through, borderless floating windows on macOS
-- CGEvent tap requires Accessibility permission — need clean onboarding flow
-- Per-app strategy detection: how to determine if an app supports AXUIElement well enough (The Wizard equivalent)
 
-## Resources
-- [kindaVim main site](https://kindavim.app/)
-- [kindaVim docs](https://docs.kindavim.app/)
-- [kindaVim GitHub](https://github.com/godbout/kindaVim.blahblah)
-- [AccessibilityStrategyTestApp](https://github.com/godbout/AccessibilityStrategyTestApp) — full list of implemented motions
-- [Alternatives: Karabiner-Elements, VimMode.spoon, SketchyVim, ShadowVim]
+- AX notifications vs polling for focus change detection — notifications are cleaner but may need observer setup per-app
+- Window border overlay: Tauri window overlay vs Core Graphics layer — need to evaluate which is less intrusive and more performant
+- Should the dim effect cover the entire screen or just other windows? Screen-level is simpler, window-level looks better
+- Config UI for exclusion list — defer to future iteration or include now?

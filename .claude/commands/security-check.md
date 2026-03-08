@@ -55,7 +55,7 @@ Read each file in scope before auditing.
 - **A09 Logging Failures** — Missing audit logs, PII in logs, no alerting on security events
 - **A10 SSRF** — Unvalidated URLs, internal network access, DNS rebinding
 
-### 2. Stack-Specific Checks (Unknown / Unknown)
+### 2. Stack-Specific Checks (Rust / Unknown)
 
 **If Unknown includes React/Next.js:**
 - `dangerouslySetInnerHTML` usage without sanitization
@@ -71,20 +71,20 @@ Read each file in scope before auditing.
 - Missing rate limiting on auth endpoints
 - Prototype pollution
 
-**If Unknown is Python:**
+**If Rust is Python:**
 - `eval()`, `exec()`, `pickle.loads()` with untrusted input
 - SQL string formatting instead of parameterized queries
 - `subprocess.shell=True` with user input
 - Missing input validation on FastAPI/Django endpoints
 - Jinja2 `| safe` filter misuse
 
-**If Unknown is Go:**
+**If Rust is Go:**
 - Unchecked error returns on security-critical operations
 - `html/template` vs `text/template` confusion
 - Missing context cancellation/timeouts
 - Race conditions on shared state
 
-**If Unknown is PHP:**
+**If Rust is PHP:**
 - `include`/`require` with user-controlled paths
 - `mysqli_query` without prepared statements
 - Missing CSRF tokens
@@ -114,7 +114,7 @@ Write findings to `tasks/security-findings.md` using this format:
 # Security Audit — YYYY-MM-DD
 
 **Scope:** Changed files on branch `<branch-name>` | Full project scan
-**Stack:** Unknown / Unknown
+**Stack:** Rust / Unknown
 **Files audited:** N
 
 ## Critical (must fix before deploy)

@@ -3,34 +3,60 @@
 
 # vim-anywhere
 
-Project instructions for Claude Code.
+Make every text field on macOS feel like native Vim. Global Vim keybindings via CGEvent tap + Accessibility API.
 
 ## Tech Stack
 
 | Tech | Details |
 |------|---------|
-| **Language** | Unknown |
-| **Framework** | Unknown |
-| **Database** | Unknown |
-| **UI** | Unknown |
-| **Testing** | Unknown |
-| **AI/LLM** | Unknown |
-| **Browser Automation** | None |
+| **Language** | Rust (edition 2024/2021) |
+| **Framework** | Tauri 2 (desktop app) |
+| **Platform** | macOS only (CGEvent tap, AXUIElement API) |
+| **UI** | HTML/CSS/JS (Tauri webview) — overlay for mode indicator |
+| **Deps** | core-graphics, core-foundation, cocoa, objc, serde |
+| **Testing** | Rust integration tests (`tests/engine_comprehensive.rs`) |
 
 ## Key Directories
 
 | Path | Purpose |
 |------|---------|
+| `crates/core/src/` | Vim engine: parser, motions, buffer, modes, registers, config |
+| `crates/platform-mac/src/` | macOS integration: event_tap, accessibility, keyboard, app_detection |
+| `ui/src-tauri/src/` | Tauri app: bridge between core + platform, commands |
+| `ui/src/` | Frontend: overlay window (HTML/CSS/JS) |
+| `src/` | Root crate: lib.rs + main.rs (re-exports) |
+| `tests/` | Integration tests |
 | `tasks/` | Planning + findings + progress + security logs |
 
 ## Build & Run
 
 ```bash
-npm run dev
-npm run build
-npm run lint
-npm test
+# Tauri dev mode (builds Rust + serves frontend)
+cd ui && npm run tauri dev
+
+# Build release
+cd ui && npm run tauri build
+
+# Rust workspace checks
+cargo build
+cargo test
+cargo clippy
 ```
+
+## Architecture Notes
+
+- **Workspace:** root Cargo.toml defines members: `crates/core`, `crates/platform-mac`, `ui/src-tauri`
+- **Event flow:** CGEvent tap → parser → motion/operator → AX API text manipulation
+- **Key rules:** Pass through Cmd shortcuts, Ctrl/Option non-char keys. Only intercept in Normal mode.
+- **AX API:** 15ms delay after text changes before cursor repositioning (SketchyVim pattern)
+- **Permissions:** Accessibility + Input Monitoring required; macOS revokes on binary change
+
+## Documentation
+
+- [`README.md`](README.md) — Project overview
+- [`CHANGELOG.md`](CHANGELOG.md) — Release history
+- [`ui/README.md`](ui/README.md) — Tauri frontend notes
+- [`.claude/docs/`](.claude/docs/) — Architectural guides
 
 ## Workflow
 

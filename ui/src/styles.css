@@ -339,6 +339,50 @@ input[type="radio"] {
   line-height: 1.6;
 }
 
+/* Delete button in mapping rows */
+.btn-delete {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--danger);
+  font-family: inherit;
+  font-size: 12px;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.btn-delete:hover {
+  border-color: var(--danger);
+  background: var(--bg-secondary);
+}
+
+.mapping-row .mono {
+  font-size: 12px;
+  color: var(--fg-primary);
+}
+
+.mapping-row {
+  grid-template-columns: 1fr 1fr 1fr 40px;
+}
+
+#mapping-add-form {
+  padding: 8px 0;
+  gap: 6px;
+}
+
+#mapping-add-form .input-field {
+  width: 100%;
+}
+
+/* App strategy dropdown in app rows */
+.app-strategy-select {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }

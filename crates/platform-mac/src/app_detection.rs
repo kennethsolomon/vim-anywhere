@@ -8,6 +8,7 @@ pub struct AppInfo {
     pub pid: i32,
 }
 
+#[allow(deprecated)]
 pub fn get_frontmost_app() -> Option<AppInfo> {
     unsafe {
         let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];

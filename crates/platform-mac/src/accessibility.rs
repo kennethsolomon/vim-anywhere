@@ -12,7 +12,28 @@ extern "C" {
         attribute: *const c_void,
         value: *mut *mut c_void,
     ) -> i32;
+    fn AXUIElementSetAttributeValue(
+        element: *mut c_void,
+        attribute: *const c_void,
+        value: *const c_void,
+    ) -> i32;
     fn AXIsProcessTrusted() -> bool;
+}
+
+// CFRange-based AXValue
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXValueCreate(value_type: u32, value_ptr: *const c_void) -> *const c_void;
+    fn AXValueGetValue(value: *const c_void, value_type: u32, value_ptr: *mut c_void) -> bool;
+}
+
+const K_AX_VALUE_TYPE_CF_RANGE: u32 = 4;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CFRange {
+    pub location: i64,
+    pub length: i64,
 }
 
 const K_AX_ERROR_SUCCESS: i32 = 0;
@@ -142,4 +163,113 @@ impl AxSupport {
     pub fn is_text_element(&self) -> bool {
         self.role == "AXTextArea" || self.role == "AXTextField"
     }
+}
+
+pub fn set_ax_value(element: &AXElement, text: &str) -> bool {
+    unsafe {
+        let attr = CFString::new("AXValue");
+        let cf_value = CFString::new(text);
+        let result = AXUIElementSetAttributeValue(
+            element.as_ptr(),
+            attr.as_concrete_TypeRef() as _,
+            cf_value.as_concrete_TypeRef() as _,
+        );
+        result == K_AX_ERROR_SUCCESS
+    }
+}
+
+pub fn get_ax_selected_range(element: &AXElement) -> Option<(usize, usize)> {
+    unsafe {
+        let attr = CFString::new("AXSelectedTextRange");
+        let mut value: *mut c_void = ptr::null_mut();
+        let result = AXUIElementCopyAttributeValue(
+            element.as_ptr(),
+            attr.as_concrete_TypeRef() as _,
+            &mut value,
+        );
+
+        if result != K_AX_ERROR_SUCCESS || value.is_null() {
+            return None;
+        }
+
+        let mut range = CFRange {
+            location: 0,
+            length: 0,
+        };
+        let ok = AXValueGetValue(
+            value as _,
+            K_AX_VALUE_TYPE_CF_RANGE,
+            &mut range as *mut CFRange as *mut c_void,
+        );
+        CFRelease(value);
+
+        if ok {
+            Some((range.location as usize, range.length as usize))
+        } else {
+            None
+        }
+    }
+}
+
+pub fn set_ax_selected_range(element: &AXElement, location: usize, length: usize) -> bool {
+    unsafe {
+        let range = CFRange {
+            location: location as i64,
+            length: length as i64,
+        };
+        let ax_value = AXValueCreate(
+            K_AX_VALUE_TYPE_CF_RANGE,
+            &range as *const CFRange as *const c_void,
+        );
+        if ax_value.is_null() {
+            return false;
+        }
+
+        let attr = CFString::new("AXSelectedTextRange");
+        let result = AXUIElementSetAttributeValue(
+            element.as_ptr(),
+            attr.as_concrete_TypeRef() as _,
+            ax_value,
+        );
+        CFRelease(ax_value);
+        result == K_AX_ERROR_SUCCESS
+    }
+}
+
+/// Convert a (line, col) cursor position to a character offset in text.
+pub fn cursor_to_offset(text: &str, line: usize, col: usize) -> usize {
+    if text.is_empty() {
+        return 0;
+    }
+    let mut offset = 0;
+    let mut line_idx = 0;
+    for chunk in text.split('\n') {
+        if line_idx == line {
+            return offset + col.min(chunk.len());
+        }
+        offset += chunk.len() + 1; // +1 for the \n
+        line_idx += 1;
+    }
+    // If line is past the end, return end of text
+    text.len()
+}
+
+/// Convert a character offset back to (line, col).
+pub fn offset_to_cursor(text: &str, offset: usize) -> (usize, usize) {
+    if text.is_empty() {
+        return (0, 0);
+    }
+    let clamped = offset.min(text.len());
+    let mut remaining = clamped;
+    let mut line_idx = 0;
+    for chunk in text.split('\n') {
+        if remaining <= chunk.len() {
+            return (line_idx, remaining);
+        }
+        remaining -= chunk.len() + 1; // +1 for \n
+        line_idx += 1;
+    }
+    // Fallback: last line, last col
+    let last_line_len = text.split('\n').last().map(|l| l.len()).unwrap_or(0);
+    (line_idx.saturating_sub(1), last_line_len)
 }

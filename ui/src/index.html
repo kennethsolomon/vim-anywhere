@@ -203,14 +203,15 @@
           </p>
           <div style="margin-top: 24px">
             <p class="hint">Permissions</p>
-            <div class="setting-row">
+            <div class="setting-row" id="ax-status">
               <span class="setting-label">Accessibility</span>
-              <span><span class="status-dot active"></span> granted</span>
+              <span><span class="status-dot inactive"></span> <span class="perm-text">checking...</span></span>
             </div>
-            <div class="setting-row">
+            <div class="setting-row" id="im-status">
               <span class="setting-label">Input Monitoring</span>
-              <span><span class="status-dot active"></span> granted</span>
+              <span><span class="status-dot inactive"></span> <span class="perm-text">checking...</span></span>
             </div>
+            <button class="btn-ghost" id="open-privacy-settings" style="margin-top: 12px">Open Privacy Settings</button>
           </div>
         </div>
       </div>

@@ -4074,11 +4074,16 @@ dependencies = [
 name = "ui"
 version = "0.1.0"
 dependencies = [
+ "cocoa",
+ "objc",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "vim-anywhere",
+ "vim-anywhere-core",
+ "vim-anywhere-platform-mac",
 ]
 
 [[package]]

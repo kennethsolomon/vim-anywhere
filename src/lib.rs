@@ -8,6 +8,7 @@ pub struct Engine {
     mode_sm: ModeStateMachine,
     parser: KeyParser,
     registers: RegisterManager,
+    last_change: Option<ParsedCommand>,
 }
 
 impl Engine {
@@ -16,6 +17,7 @@ impl Engine {
             mode_sm: ModeStateMachine::new(config),
             parser: KeyParser::new(),
             registers: RegisterManager::new(),
+            last_change: None,
         }
     }
 
@@ -29,8 +31,11 @@ impl Engine {
         // In Insert mode, check for mode exit sequences
         if mode == Mode::Insert {
             if event.key == vim_anywhere_core::parser::Key::Escape {
-                self.mode_sm.handle_escape();
+                let transition = self.mode_sm.handle_escape();
                 self.parser.reset();
+                if transition == vim_anywhere_core::modes::ModeTransition::SendEscape {
+                    return EngineResult::SendRealEscape;
+                }
                 return EngineResult::ModeChanged(Mode::Normal);
             }
             if let vim_anywhere_core::parser::Key::Char(ch) = &event.key {
@@ -45,14 +50,54 @@ impl Engine {
 
         let cmd = self.parser.parse(event, mode);
 
+        // Debug: log parsed command to file
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true).append(true)
+            .open("/tmp/vim-anywhere.log")
+        {
+            let _ = std::io::Write::write_fmt(&mut f, format_args!("  ENGINE: cmd={:?} mode={:?}\n", cmd, mode));
+        }
+
         match cmd {
             ParsedCommand::Incomplete => EngineResult::Suppressed,
             ParsedCommand::Invalid => EngineResult::Suppressed,
             ParsedCommand::Escape => {
-                self.mode_sm.handle_escape();
+                let transition = self.mode_sm.handle_escape();
+                if transition == vim_anywhere_core::modes::ModeTransition::SendEscape {
+                    return EngineResult::SendRealEscape;
+                }
                 EngineResult::ModeChanged(self.mode_sm.mode())
             }
+            ParsedCommand::RepeatLastChange => {
+                if let Some(last) = self.last_change.clone() {
+                    self.execute_command(last, buffer)
+                } else {
+                    EngineResult::Suppressed
+                }
+            }
+            _ => {
+                let is_change = matches!(
+                    cmd,
+                    ParsedCommand::OperatorMotion(_, _, _)
+                        | ParsedCommand::OperatorTextObject(_, _, _)
+                        | ParsedCommand::OperatorLine(_, _)
+                        | ParsedCommand::ToggleCase
+                        | ParsedCommand::JoinLines
+                        | ParsedCommand::PasteAfter
+                        | ParsedCommand::PasteBefore
+                        | ParsedCommand::Replace(_)
+                        | ParsedCommand::VisualOperation(_)
+                );
+                if is_change {
+                    self.last_change = Some(cmd.clone());
+                }
+                self.execute_command(cmd, buffer)
+            }
+        }
+    }
 
+    fn execute_command(&mut self, cmd: ParsedCommand, buffer: &mut InMemoryBuffer) -> EngineResult {
+        match cmd {
             // Mode entries
             ParsedCommand::EnterInsert(variant) => {
                 self.handle_enter_insert(variant, buffer);
@@ -60,10 +105,22 @@ impl Engine {
             }
             ParsedCommand::EnterVisualCharacterwise => {
                 self.mode_sm.enter_visual_characterwise();
+                let pos = buffer.get_cursor();
+                buffer.set_selection(Some(vim_anywhere_core::buffer::Selection::new(
+                    pos,
+                    pos,
+                    vim_anywhere_core::buffer::SelectionKind::Characterwise,
+                )));
                 EngineResult::ModeChanged(self.mode_sm.mode())
             }
             ParsedCommand::EnterVisualLinewise => {
                 self.mode_sm.enter_visual_linewise();
+                let pos = buffer.get_cursor();
+                buffer.set_selection(Some(vim_anywhere_core::buffer::Selection::new(
+                    pos,
+                    pos,
+                    vim_anywhere_core::buffer::SelectionKind::Linewise,
+                )));
                 EngineResult::ModeChanged(self.mode_sm.mode())
             }
 
@@ -119,6 +176,8 @@ impl Engine {
                 self.visual_swap_anchor(buffer);
                 EngineResult::BufferModified
             }
+
+            _ => EngineResult::Suppressed,
         }
     }
 
@@ -128,7 +187,7 @@ impl Engine {
             InsertVariant::I => {}
             InsertVariant::A => {
                 let new_col = (pos.col + 1).min(buffer.line_len(pos.line));
-                buffer.set_cursor(CursorPosition::new(pos.line, new_col));
+                buffer.set_cursor_insert(CursorPosition::new(pos.line, new_col));
             }
             InsertVariant::BigI => {
                 let col = buffer
@@ -142,7 +201,7 @@ impl Engine {
                 buffer.set_cursor(CursorPosition::new(pos.line, col));
             }
             InsertVariant::BigA => {
-                buffer.set_cursor(CursorPosition::new(pos.line, buffer.line_len(pos.line)));
+                buffer.set_cursor_insert(CursorPosition::new(pos.line, buffer.line_len(pos.line)));
             }
             InsertVariant::O => {
                 let line_end = buffer.line_len(pos.line);
@@ -210,7 +269,7 @@ impl Engine {
             Motion::WordEnd => motions::motion_word_end(buffer, count),
             Motion::WordEndBig => motions::motion_word_end_big(buffer, count),
             Motion::WordEndBackward => motions::motion_word_end_backward(buffer, count),
-            Motion::WordEndBackwardBig => motions::motion_word_end_backward(buffer, count),
+            Motion::WordEndBackwardBig => motions::motion_word_end_backward_big(buffer, count),
             Motion::FindChar(ch) => {
                 self.registers.set_last_find(
                     vim_anywhere_core::register::FindRecord {
@@ -283,32 +342,40 @@ impl Engine {
             }
             Motion::GoToLine => motions::motion_goto_line(buffer, count),
             Motion::GoToFirstLine => motions::motion_goto_first_line(buffer, count),
+            Motion::GoToLastLine => motions::motion_goto_last_line(buffer, count),
             Motion::MatchBracket => motions::motion_match_bracket(buffer, count),
             Motion::ParagraphForward => motions::motion_paragraph_forward(buffer, count),
             Motion::ParagraphBackward => motions::motion_paragraph_backward(buffer, count),
+            // Scroll motions — move cursor by page/half-page since we can't scroll AX viewport
+            Motion::ScrollPageDown => motions::motion_down(buffer, count * 30),
+            Motion::ScrollPageUp => motions::motion_up(buffer, count * 30),
+            Motion::ScrollHalfPageDown => motions::motion_down(buffer, count * 15),
+            Motion::ScrollHalfPageUp => motions::motion_up(buffer, count * 15),
+
+            // Display motions — same as regular equivalents (no wrapped lines in AX)
+            Motion::DisplayLineStart | Motion::InsertLineStart => motions::motion_line_start(buffer, count),
+            Motion::DisplayLineEnd => motions::motion_line_end(buffer, count),
+            Motion::DisplayFirstNonBlank => motions::motion_first_non_blank(buffer, count),
+            Motion::DisplayLastNonBlank => motions::motion_last_non_blank(buffer, count),
+            Motion::DisplayDown => motions::motion_down(buffer, count),
+            Motion::DisplayUp => motions::motion_up(buffer, count),
+
+            // Sentence motions
+            Motion::SentenceForward => motions::motion_sentence_forward(buffer, count),
+            Motion::SentenceBackward => motions::motion_sentence_backward(buffer, count),
+
+            // Viewport-relative motions — no meaningful impl for AX, stay in place
             Motion::ScreenTop
             | Motion::ScreenMiddle
             | Motion::ScreenBottom
-            | Motion::ScrollPageUp
-            | Motion::ScrollPageDown
-            | Motion::ScrollHalfPageUp
-            | Motion::ScrollHalfPageDown
             | Motion::ScrollCursorTop
             | Motion::ScrollCursorCenter
             | Motion::ScrollCursorBottom
             | Motion::ScrollCursorTopFirstNonBlank
             | Motion::ScrollCursorCenterFirstNonBlank
             | Motion::ScrollCursorBottomFirstNonBlank
-            | Motion::DisplayLineStart
-            | Motion::DisplayLineEnd
-            | Motion::DisplayFirstNonBlank
-            | Motion::DisplayLastNonBlank
-            | Motion::DisplayDown
-            | Motion::DisplayUp
-            | Motion::DisplayMiddle
-            | Motion::InsertLineStart => buffer.get_cursor(),
+            | Motion::DisplayMiddle => buffer.get_cursor(),
 
-            Motion::SentenceForward | Motion::SentenceBackward => buffer.get_cursor(),
             Motion::UnmatchedParenForward
             | Motion::UnmatchedParenBackward
             | Motion::UnmatchedBraceForward
@@ -375,12 +442,13 @@ impl Engine {
                 | Motion::LastNonBlank
                 | Motion::GoToLine
                 | Motion::GoToFirstLine
+                | Motion::GoToLastLine
                 | Motion::MatchBracket
                 | Motion::WordEndBackward
                 | Motion::WordEndBackwardBig
         );
 
-        let (range_start, range_end) = if start.line < end.line
+        let (range_start, mut range_end) = if start.line < end.line
             || (start.line == end.line && start.col <= end.col)
         {
             let end_col = if inclusive { end.col + 1 } else { end.col };
@@ -389,6 +457,15 @@ impl Engine {
             let start_col = if inclusive { start.col + 1 } else { start.col };
             (end, CursorPosition::new(start.line, start_col))
         };
+
+        // When motion didn't move (hit boundary) but cursor is on a character,
+        // include the character under cursor (e.g., x/dl at end of line)
+        if range_start == range_end
+            && matches!(motion, Motion::Right)
+            && buffer.char_at(range_start).is_some()
+        {
+            range_end = CursorPosition::new(range_start.line, range_start.col + 1);
+        }
 
         self.apply_operator(op, range_start, range_end, YankStyle::Characterwise, buffer);
     }
@@ -482,6 +559,16 @@ impl Engine {
                     })
                     .collect();
                 buffer.replace_range(start, end, &toggled);
+                buffer.set_cursor(start);
+            }
+            Operator::Lowercase => {
+                let lowered: String = text.chars().flat_map(|c| c.to_lowercase()).collect();
+                buffer.replace_range(start, end, &lowered);
+                buffer.set_cursor(start);
+            }
+            Operator::Uppercase => {
+                let uppered: String = text.chars().flat_map(|c| c.to_uppercase()).collect();
+                buffer.replace_range(start, end, &uppered);
                 buffer.set_cursor(start);
             }
         }
@@ -628,4 +715,6 @@ pub enum EngineResult {
     Suppressed,
     ModeChanged(Mode),
     BufferModified,
+    /// Double-escape detected — pass a real Escape key through to the app.
+    SendRealEscape,
 }

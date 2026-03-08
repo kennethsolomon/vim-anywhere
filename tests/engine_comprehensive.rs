@@ -40,8 +40,8 @@ fn insert_big_a_appends_at_end_of_line() {
 
     let result = engine.handle_key(&KeyEvent::char('A'), &mut buf);
     assert_eq!(result, EngineResult::ModeChanged(Mode::Insert));
-    // set_cursor clamps to line_len - 1 = 4 for "hello"
-    assert_eq!(buf.get_cursor(), CursorPosition::new(0, 4));
+    // Insert mode allows cursor at line_len (past last char)
+    assert_eq!(buf.get_cursor(), CursorPosition::new(0, 5));
 }
 
 #[test]

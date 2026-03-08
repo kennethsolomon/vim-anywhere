@@ -119,6 +119,19 @@ impl InMemoryBuffer {
         }
     }
 
+    /// Set cursor allowing position at line_len (past last char).
+    /// Used for Insert mode where cursor can sit after the last character.
+    pub fn set_cursor_insert(&mut self, pos: CursorPosition) {
+        self.cursor = pos;
+        if self.cursor.line >= self.lines.len() {
+            self.cursor.line = self.lines.len().saturating_sub(1);
+        }
+        let max_col = self.line_len(self.cursor.line);
+        if self.cursor.col > max_col {
+            self.cursor.col = max_col;
+        }
+    }
+
     fn rebuild_from_text(text: &str) -> Vec<String> {
         if text.is_empty() {
             vec![String::new()]

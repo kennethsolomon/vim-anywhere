@@ -81,6 +81,8 @@ pub enum Operator {
     Indent,
     Outdent,
     ToggleCase,
+    Lowercase,
+    Uppercase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +118,7 @@ pub enum Motion {
     PrevSearch,
     GoToLine,
     GoToFirstLine,
+    GoToLastLine,
     ScreenTop,
     ScreenMiddle,
     ScreenBottom,
@@ -193,6 +196,7 @@ pub enum ParsedCommand {
     EnterVisualLinewise,
     VisualOperation(Operator),
     VisualSwapAnchor,
+    RepeatLastChange,
     Escape,
     Incomplete,
     Invalid,
@@ -277,6 +281,16 @@ impl KeyParser {
                     }
                     _ => ParsedCommand::Motion(Motion::Return, self.get_count()),
                 };
+                self.reset();
+                return cmd;
+            }
+            Key::Backspace => {
+                let cmd = ParsedCommand::Motion(Motion::Left, self.get_count());
+                self.reset();
+                return cmd;
+            }
+            Key::Delete => {
+                let cmd = ParsedCommand::OperatorMotion(Operator::Delete, Motion::Right, self.get_count());
                 self.reset();
                 return cmd;
             }
@@ -431,7 +445,13 @@ impl KeyParser {
             ',' => ParsedCommand::Motion(Motion::RepeatFindReverse, count),
             'n' => ParsedCommand::Motion(Motion::NextSearch, count),
             'N' => ParsedCommand::Motion(Motion::PrevSearch, count),
-            'G' => ParsedCommand::Motion(Motion::GoToLine, count),
+            'G' => {
+                if self.count.is_some() {
+                    ParsedCommand::Motion(Motion::GoToLine, count)
+                } else {
+                    ParsedCommand::Motion(Motion::GoToLastLine, 1)
+                }
+            }
             'H' => ParsedCommand::Motion(Motion::ScreenTop, count),
             'M' => ParsedCommand::Motion(Motion::ScreenMiddle, count),
             'L' => ParsedCommand::Motion(Motion::ScreenBottom, count),
@@ -507,6 +527,9 @@ impl KeyParser {
             'O' => ParsedCommand::EnterInsert(crate::modes::InsertVariant::BigO),
 
             // Single-char editing
+            'x' => ParsedCommand::OperatorMotion(Operator::Delete, Motion::Right, count),
+            'X' => ParsedCommand::OperatorMotion(Operator::Delete, Motion::Left, count),
+            's' => ParsedCommand::OperatorMotion(Operator::Change, Motion::Right, count),
             'r' => {
                 self.state = ParserState::WaitingReplaceChar;
                 return ParsedCommand::Incomplete;
@@ -525,6 +548,12 @@ impl KeyParser {
                 self.state = ParserState::WaitingOperatorMotion(Operator::Indent);
                 return ParsedCommand::Incomplete;
             }
+
+            // Line substitute (like cc)
+            'S' => ParsedCommand::OperatorLine(Operator::Change, count),
+
+            // Dot repeat
+            '.' => ParsedCommand::RepeatLastChange,
 
             // Visual mode
             'v' => ParsedCommand::EnterVisualCharacterwise,
@@ -624,7 +653,12 @@ impl KeyParser {
             'B' => Motion::WordBackwardBig,
             'e' => Motion::WordEnd,
             'E' => Motion::WordEndBig,
-            'G' => Motion::GoToLine,
+            'G' => {
+                let m = if self.count.is_some() { Motion::GoToLine } else { Motion::GoToLastLine };
+                let cmd = ParsedCommand::OperatorMotion(op, m, count);
+                self.reset();
+                return cmd;
+            }
             _ => {
                 self.reset();
                 return ParsedCommand::Invalid;
@@ -639,7 +673,13 @@ impl KeyParser {
     fn parse_g_prefix(&mut self, ch: char) -> ParsedCommand {
         let count = self.get_count();
         let cmd = match ch {
-            'g' => ParsedCommand::Motion(Motion::GoToFirstLine, count),
+            'g' => {
+                if self.count.is_some() {
+                    ParsedCommand::Motion(Motion::GoToLine, count)
+                } else {
+                    ParsedCommand::Motion(Motion::GoToFirstLine, count)
+                }
+            }
             '0' => ParsedCommand::Motion(Motion::DisplayLineStart, count),
             '$' => ParsedCommand::Motion(Motion::DisplayLineEnd, count),
             '^' => ParsedCommand::Motion(Motion::DisplayFirstNonBlank, count),
@@ -838,6 +878,11 @@ impl KeyParser {
                 self.reset();
                 return ParsedCommand::Motion(Motion::Return, self.get_count());
             }
+            Key::Backspace => {
+                let cmd = ParsedCommand::Motion(Motion::Left, self.get_count());
+                self.reset();
+                return cmd;
+            }
             _ => {
                 self.reset();
                 return ParsedCommand::Invalid;
@@ -905,7 +950,16 @@ impl KeyParser {
                     ')' => ParsedCommand::Motion(Motion::SentenceForward, count),
                     '{' => ParsedCommand::Motion(Motion::ParagraphBackward, count),
                     '}' => ParsedCommand::Motion(Motion::ParagraphForward, count),
-                    'G' => ParsedCommand::Motion(Motion::GoToLine, count),
+                    '%' => ParsedCommand::Motion(Motion::MatchBracket, count),
+                    'n' => ParsedCommand::Motion(Motion::NextSearch, count),
+                    'N' => ParsedCommand::Motion(Motion::PrevSearch, count),
+                    'G' => {
+                        if self.count.is_some() {
+                            ParsedCommand::Motion(Motion::GoToLine, count)
+                        } else {
+                            ParsedCommand::Motion(Motion::GoToLastLine, 1)
+                        }
+                    }
 
                     // Find char
                     'f' => {
@@ -930,14 +984,15 @@ impl KeyParser {
                     }
 
                     // Operations
+                    'x' => ParsedCommand::VisualOperation(Operator::Delete),
                     'c' => ParsedCommand::VisualOperation(Operator::Change),
                     'd' => ParsedCommand::VisualOperation(Operator::Delete),
                     'y' => ParsedCommand::VisualOperation(Operator::Yank),
                     '<' => ParsedCommand::VisualOperation(Operator::Outdent),
                     '>' => ParsedCommand::VisualOperation(Operator::Indent),
-                    '~' => ParsedCommand::ToggleCase,
-                    'u' => ParsedCommand::VisualOperation(Operator::ToggleCase), // lowercase
-                    'U' => ParsedCommand::VisualOperation(Operator::ToggleCase), // uppercase
+                    '~' => ParsedCommand::VisualOperation(Operator::ToggleCase),
+                    'u' => ParsedCommand::VisualOperation(Operator::Lowercase),
+                    'U' => ParsedCommand::VisualOperation(Operator::Uppercase),
                     'C' => ParsedCommand::VisualOperation(Operator::Change),
                     'D' => ParsedCommand::VisualOperation(Operator::Delete),
                     'S' => ParsedCommand::VisualOperation(Operator::Change),

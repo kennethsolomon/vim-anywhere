@@ -203,7 +203,11 @@ pub fn motion_word_backward(buf: &dyn TextBuffer, count: usize) -> CursorPositio
             None => break,
         };
         let chars: Vec<char> = line.chars().collect();
-        let mut i = pos.col.saturating_sub(1);
+        if chars.is_empty() {
+            pos.col = 0;
+            continue;
+        }
+        let mut i = pos.col.saturating_sub(1).min(chars.len() - 1);
 
         // Skip whitespace backward
         while i > 0 && chars[i].is_whitespace() {
@@ -241,7 +245,11 @@ pub fn motion_word_backward_big(buf: &dyn TextBuffer, count: usize) -> CursorPos
             None => break,
         };
         let chars: Vec<char> = line.chars().collect();
-        let mut i = pos.col.saturating_sub(1);
+        if chars.is_empty() {
+            pos.col = 0;
+            continue;
+        }
+        let mut i = pos.col.saturating_sub(1).min(chars.len() - 1);
 
         while i > 0 && chars[i].is_whitespace() {
             i -= 1;
@@ -394,7 +402,11 @@ pub fn motion_word_end_backward(buf: &dyn TextBuffer, count: usize) -> CursorPos
             None => break,
         };
         let chars: Vec<char> = line.chars().collect();
-        let mut i = pos.col.saturating_sub(1);
+        if chars.is_empty() {
+            pos.col = 0;
+            continue;
+        }
+        let mut i = pos.col.saturating_sub(1).min(chars.len() - 1);
 
         while i > 0 && chars[i].is_whitespace() {
             i -= 1;
@@ -424,6 +436,126 @@ pub fn motion_word_end_backward(buf: &dyn TextBuffer, count: usize) -> CursorPos
         pos.col = i;
     }
     pos
+}
+
+pub fn motion_word_end_backward_big(buf: &dyn TextBuffer, count: usize) -> CursorPosition {
+    let mut pos = buf.get_cursor();
+    for _ in 0..count {
+        if pos.col == 0 {
+            if pos.line > 0 {
+                pos.line -= 1;
+                pos.col = buf.line_len(pos.line).saturating_sub(1);
+            }
+            continue;
+        }
+
+        let line = match buf.line_at(pos.line) {
+            Some(l) => l,
+            None => break,
+        };
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() {
+            pos.col = 0;
+            continue;
+        }
+        let mut i = pos.col.saturating_sub(1).min(chars.len() - 1);
+
+        // Skip whitespace backward
+        while i > 0 && chars[i].is_whitespace() {
+            i -= 1;
+        }
+
+        if i == 0 {
+            pos.col = 0;
+            continue;
+        }
+
+        // Skip non-whitespace backward (WORD boundary)
+        while i > 0 && !chars[i].is_whitespace() {
+            i -= 1;
+        }
+        if chars[i].is_whitespace() {
+            i += 1;
+        }
+
+        pos.col = i;
+    }
+    pos
+}
+
+pub fn motion_sentence_forward(buf: &dyn TextBuffer, count: usize) -> CursorPosition {
+    let text = buf.get_text();
+    let chars: Vec<char> = text.chars().collect();
+    let pos = buf.get_cursor();
+
+    let mut cursor_offset = 0;
+    for i in 0..pos.line {
+        cursor_offset += buf.line_len(i) + 1;
+    }
+    cursor_offset += pos.col;
+
+    let mut found = 0;
+    let mut i = cursor_offset;
+
+    while i < chars.len() {
+        if chars[i] == '.' || chars[i] == '!' || chars[i] == '?' {
+            i += 1;
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
+            }
+            found += 1;
+            if found >= count {
+                if i < chars.len() {
+                    return offset_to_pos(buf, i);
+                }
+                break;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    let last = buf.line_count().saturating_sub(1);
+    CursorPosition::new(last, buf.line_len(last).saturating_sub(1))
+}
+
+pub fn motion_sentence_backward(buf: &dyn TextBuffer, count: usize) -> CursorPosition {
+    let text = buf.get_text();
+    let chars: Vec<char> = text.chars().collect();
+    let pos = buf.get_cursor();
+
+    let mut cursor_offset = 0;
+    for i in 0..pos.line {
+        cursor_offset += buf.line_len(i) + 1;
+    }
+    cursor_offset += pos.col;
+
+    let mut found = 0;
+    if cursor_offset == 0 {
+        return CursorPosition::new(0, 0);
+    }
+    let mut i = cursor_offset - 1;
+
+    // Skip whitespace backward from current position
+    while i > 0 && chars[i].is_whitespace() {
+        i -= 1;
+    }
+
+    while i > 0 {
+        i -= 1;
+        if chars[i] == '.' || chars[i] == '!' || chars[i] == '?' {
+            let mut start = i + 1;
+            while start < chars.len() && chars[start].is_whitespace() {
+                start += 1;
+            }
+            found += 1;
+            if found >= count {
+                return offset_to_pos(buf, start);
+            }
+        }
+    }
+
+    CursorPosition::new(0, 0)
 }
 
 pub fn motion_find_char(buf: &dyn TextBuffer, ch: char, count: usize) -> CursorPosition {
@@ -797,7 +929,7 @@ fn find_matching_pair(
     // First check if cursor is on the open bracket
     if cursor_offset < chars.len() && chars[cursor_offset] == open {
         open_offset = Some(cursor_offset);
-    } else {
+    } else if !chars.is_empty() {
         // Search backward
         for i in (0..=cursor_offset.min(chars.len() - 1)).rev() {
             if chars[i] == close {

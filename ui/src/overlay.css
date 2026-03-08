@@ -21,6 +21,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.overlay-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.overlay-container.hidden {
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+}
+
 .mode-indicator {
   font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
   font-size: 11px;
@@ -33,10 +46,11 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  transition: background 0.12s ease;
 }
 
 .mode-indicator.normal {
-  background: rgba(100, 115, 175, 0.85);
+  background: rgba(0, 255, 159, 0.85);
 }
 
 .mode-indicator.insert {
@@ -44,5 +58,25 @@ body {
 }
 
 .mode-indicator.visual {
-  background: rgba(200, 135, 20, 0.85);
+  background: rgba(255, 170, 0, 0.85);
+}
+
+.mode-indicator.flash {
+  animation: flash 0.2s ease;
+}
+
+@keyframes flash {
+  0%   { filter: brightness(1); }
+  50%  { filter: brightness(1.4); }
+  100% { filter: brightness(1); }
+}
+
+.pending-keys {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.05em;
+  min-width: 0;
+  white-space: nowrap;
 }

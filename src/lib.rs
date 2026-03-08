@@ -25,6 +25,15 @@ impl Engine {
         self.mode_sm.mode()
     }
 
+    pub fn pending_keys(&self) -> &str {
+        self.parser.pending_keys()
+    }
+
+    pub fn reset_to_insert(&mut self) {
+        self.mode_sm.reset_to_insert();
+        self.parser.reset();
+    }
+
     pub fn handle_key(&mut self, event: &KeyEvent, buffer: &mut InMemoryBuffer) -> EngineResult {
         let mode = self.mode_sm.mode();
 
@@ -50,23 +59,16 @@ impl Engine {
 
         let cmd = self.parser.parse(event, mode);
 
-        // Debug: log parsed command to file
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true).append(true)
-            .open("/tmp/vim-anywhere.log")
-        {
-            let _ = std::io::Write::write_fmt(&mut f, format_args!("  ENGINE: key={:?} mods={:?} cmd={:?} mode={:?}\n", event.key, event.modifiers, cmd, mode));
-        }
-
         match cmd {
             ParsedCommand::Incomplete => EngineResult::Suppressed,
             ParsedCommand::Invalid => EngineResult::Suppressed,
             ParsedCommand::Escape => {
                 let transition = self.mode_sm.handle_escape();
-                if transition == vim_anywhere_core::modes::ModeTransition::SendEscape {
-                    return EngineResult::SendRealEscape;
+                match transition {
+                    vim_anywhere_core::modes::ModeTransition::SendEscape => EngineResult::SendRealEscape,
+                    vim_anywhere_core::modes::ModeTransition::PassThrough => EngineResult::PassThrough,
+                    _ => EngineResult::ModeChanged(self.mode_sm.mode()),
                 }
-                EngineResult::ModeChanged(self.mode_sm.mode())
             }
             ParsedCommand::RepeatLastChange => {
                 if let Some(last) = self.last_change.clone() {

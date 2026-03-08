@@ -1,5 +1,5 @@
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
-use std::io::Write;
 use tauri::{Emitter, Manager};
 use tauri::tray::TrayIconBuilder;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -21,6 +21,7 @@ use vim_anywhere::EngineResult;
 struct AppState {
     engine: Mutex<Engine>,
     config: Mutex<Config>,
+    last_focused_element: Mutex<Option<(String, usize)>>,
 }
 
 fn config_to_mode_entry(cfg: &Config) -> ModeEntryConfig {
@@ -32,10 +33,10 @@ fn config_to_mode_entry(cfg: &Config) -> ModeEntryConfig {
     });
 
     ModeEntryConfig {
-        escape_key: cfg.mode_entry.method == "escape",
         control_bracket: cfg.mode_entry.method == "control-bracket",
         custom_sequence: if cfg.mode_entry.method == "custom" { custom_seq } else { None },
         double_escape_sends_real: cfg.mode_entry.double_escape_sends_real,
+        smart_escape: cfg.mode_entry.smart_escape,
         double_escape_timeout_ms: 300,
         sequence_timeout_ms: 200,
     }
@@ -45,6 +46,21 @@ fn config_to_mode_entry(cfg: &Config) -> ModeEntryConfig {
 
 #[derive(Clone, serde::Serialize)]
 struct ModeChangedPayload {
+    mode: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct PendingKeysPayload {
+    keys: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct FocusHighlightPayload {
+    visible: bool,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
     mode: String,
 }
 
@@ -118,11 +134,12 @@ fn save_config_full(state: tauri::State<'_, Arc<AppState>>, config: Config) -> b
 }
 
 #[tauri::command]
-fn set_mode_entry(state: tauri::State<'_, Arc<AppState>>, method: String, custom_sequence: Option<String>, double_escape: bool) -> bool {
+fn set_mode_entry(state: tauri::State<'_, Arc<AppState>>, method: String, custom_sequence: Option<String>, double_escape: bool, smart_escape: bool) -> bool {
     let mut cfg = state.config.lock().unwrap();
     cfg.mode_entry.method = method;
     cfg.mode_entry.custom_sequence = custom_sequence;
     cfg.mode_entry.double_escape_sends_real = double_escape;
+    cfg.mode_entry.smart_escape = smart_escape;
     let mode_entry = config_to_mode_entry(&cfg);
     let save_result = cfg.save().is_ok();
     drop(cfg);
@@ -257,6 +274,78 @@ fn open_privacy_settings() {
     let _ = std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         .spawn();
+}
+
+#[tauri::command]
+fn open_accessibility_settings() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn();
+}
+
+#[tauri::command]
+fn open_input_monitoring_settings() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+        .spawn();
+}
+
+#[tauri::command]
+fn complete_onboarding(state: tauri::State<'_, Arc<AppState>>, app_handle: tauri::AppHandle) {
+    let mut cfg = state.config.lock().unwrap();
+    cfg.onboarding_complete = true;
+    let _ = cfg.save();
+    drop(cfg);
+    if let Some(win) = app_handle.get_webview_window("onboarding") {
+        let _ = win.close();
+    }
+}
+
+#[tauri::command]
+fn set_excluded_app(state: tauri::State<'_, Arc<AppState>>, bundle_id: String) -> bool {
+    // Basic validation: non-empty, max 255 chars, only printable ASCII (reverse-domain style)
+    if bundle_id.is_empty()
+        || bundle_id.len() > 255
+        || !bundle_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
+        return false;
+    }
+    let mut cfg = state.config.lock().unwrap();
+    if !cfg.excluded_apps.contains(&bundle_id) {
+        cfg.excluded_apps.push(bundle_id);
+    }
+    cfg.save().is_ok()
+}
+
+#[tauri::command]
+fn remove_excluded_app(state: tauri::State<'_, Arc<AppState>>, bundle_id: String) -> bool {
+    let mut cfg = state.config.lock().unwrap();
+    cfg.excluded_apps.retain(|a| a != &bundle_id);
+    cfg.save().is_ok()
+}
+
+#[tauri::command]
+fn reopen_onboarding(state: tauri::State<'_, Arc<AppState>>, app_handle: tauri::AppHandle) {
+    let mut cfg = state.config.lock().unwrap();
+    cfg.onboarding_complete = false;
+    let _ = cfg.save();
+    drop(cfg);
+
+    // Close existing onboarding window if any
+    if let Some(win) = app_handle.get_webview_window("onboarding") {
+        let _ = win.close();
+    }
+    // Create new onboarding window
+    let _ = tauri::WebviewWindowBuilder::new(
+        &app_handle,
+        "onboarding",
+        tauri::WebviewUrl::App("onboarding.html".into()),
+    )
+    .title("vim-anywhere Setup")
+    .inner_size(480.0, 560.0)
+    .resizable(false)
+    .center()
+    .build();
 }
 
 // ── Wizard ──────────────────────────────────────────────────────────────────
@@ -406,6 +495,22 @@ fn apply_buffer_to_ax(
     }
 }
 
+/// Make a window visible on all macOS Spaces (desktops).
+#[cfg(target_os = "macos")]
+fn set_all_spaces(window: &tauri::WebviewWindow) {
+    use cocoa::base::id;
+    use objc::{msg_send, sel, sel_impl};
+    if let Ok(ns_win) = window.ns_window() {
+        unsafe {
+            let ns_window = ns_win as id;
+            // NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
+            // NSWindowCollectionBehaviorStationary = 1 << 4
+            let behavior: u64 = (1 << 0) | (1 << 4);
+            let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
+        }
+    }
+}
+
 // ── App entry point ─────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -417,6 +522,7 @@ pub fn run() {
     let state = Arc::new(AppState {
         engine: Mutex::new(engine),
         config: Mutex::new(config),
+        last_focused_element: Mutex::new(None),
     });
 
     tauri::Builder::default()
@@ -441,6 +547,12 @@ pub fn run() {
             set_app_strategy,
             run_wizard,
             open_privacy_settings,
+            open_accessibility_settings,
+            open_input_monitoring_settings,
+            complete_onboarding,
+            set_excluded_app,
+            remove_excluded_app,
+            reopen_onboarding,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -491,12 +603,11 @@ pub fn run() {
             // ── Overlay window ─────────────────────────────────────────
             {
                 let cfg = state.config.lock().unwrap();
-                let show_overlay = cfg.show_overlay;
                 let overlay_pos = cfg.overlay_position.clone();
                 drop(cfg);
 
-                let overlay_w = 100.0_f64;
-                let overlay_h = 32.0_f64;
+                let overlay_w = 120.0_f64;
+                let overlay_h = 36.0_f64;
                 let margin = 20.0_f64;
                 let dock_offset = 40.0_f64;
 
@@ -512,7 +623,7 @@ pub fn run() {
                 .resizable(false)
                 .focused(false)
                 .skip_taskbar(true)
-                .visible(show_overlay)
+                .visible(false) // Start hidden — app starts in Insert mode
                 .inner_size(overlay_w, overlay_h);
 
                 // Position based on config
@@ -527,20 +638,95 @@ pub fn run() {
 
                 if let Ok(overlay) = builder.build() {
                     let _ = overlay.set_ignore_cursor_events(true);
-                    // Make visible on all Spaces (macOS)
                     #[cfg(target_os = "macos")]
-                    {
-                        use cocoa::base::id;
-                        use objc::{msg_send, sel, sel_impl};
-                        if let Ok(ns_win) = overlay.ns_window() {
-                            unsafe {
-                                let ns_window = ns_win as id;
-                                // NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
-                                // NSWindowCollectionBehaviorStationary = 1 << 4
-                                let behavior: u64 = (1 << 0) | (1 << 4);
-                                let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
-                            }
+                    set_all_spaces(&overlay);
+                }
+            }
+
+            // ── Onboarding window (if needed) ─────────────────────────
+            {
+                let cfg = state.config.lock().unwrap();
+                let needs_onboarding = !cfg.onboarding_complete || !accessibility::is_accessibility_trusted();
+                drop(cfg);
+
+                if needs_onboarding {
+                    let _ = tauri::WebviewWindowBuilder::new(
+                        app,
+                        "onboarding",
+                        tauri::WebviewUrl::App("onboarding.html".into()),
+                    )
+                    .title("vim-anywhere Setup")
+                    .inner_size(480.0, 560.0)
+                    .resizable(false)
+                    .center()
+                    .build();
+                }
+            }
+
+            // ── Dim overlay window (fullscreen, click-through) ────────
+            {
+                let cfg = state.config.lock().unwrap();
+                let focus_enabled = cfg.focus_highlight;
+                drop(cfg);
+
+                if focus_enabled {
+                    if let Ok(Some(monitor)) = app.primary_monitor() {
+                        let size = monitor.size();
+                        let scale = monitor.scale_factor();
+                        let screen_w = size.width as f64 / scale;
+                        let screen_h = size.height as f64 / scale;
+
+                        if let Ok(dim_win) = tauri::WebviewWindowBuilder::new(
+                            app,
+                            "dim-overlay",
+                            tauri::WebviewUrl::App("dim-overlay.html".into()),
+                        )
+                        .title("")
+                        .decorations(false)
+                        .transparent(true)
+                        .always_on_top(true)
+                        .resizable(false)
+                        .focused(false)
+                        .skip_taskbar(true)
+                        .visible(false)
+                        .inner_size(screen_w, screen_h)
+                        .position(0.0, 0.0)
+                        .build()
+                        {
+                            let _ = dim_win.set_ignore_cursor_events(true);
+                            #[cfg(target_os = "macos")]
+                            set_all_spaces(&dim_win);
                         }
+                    }
+                }
+            }
+
+            // ── Focus border window (matches active window, click-through) ──
+            {
+                let cfg = state.config.lock().unwrap();
+                let focus_enabled = cfg.focus_highlight;
+                drop(cfg);
+
+                if focus_enabled {
+                    if let Ok(border_win) = tauri::WebviewWindowBuilder::new(
+                        app,
+                        "focus-border",
+                        tauri::WebviewUrl::App("focus-border.html".into()),
+                    )
+                    .title("")
+                    .decorations(false)
+                    .transparent(true)
+                    .always_on_top(true)
+                    .resizable(false)
+                    .focused(false)
+                    .skip_taskbar(true)
+                    .visible(false)
+                    .inner_size(400.0, 300.0)
+                    .build()
+                    {
+                        let _ = border_win.set_ignore_cursor_events(true);
+                        #[cfg(target_os = "macos")]
+                        set_all_spaces(&border_win);
                     }
                 }
             }
@@ -557,14 +743,6 @@ pub fn run() {
                     eprintln!("[vim-anywhere] Accessibility not granted. Features limited.");
                 }
 
-                // Log event tap start
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true).append(true)
-                    .open("/tmp/vim-anywhere.log")
-                {
-                    let _ = writeln!(f, "=== Event tap thread starting ===");
-                    let _ = writeln!(f, "Accessibility trusted: {}", accessibility::is_accessibility_trusted());
-                }
 
                 let callback: event_tap::KeyEventCallback = Box::new(move |key_event: vim_anywhere_core::parser::KeyEvent| -> bool {
                     let notify_mode = |mode: Mode| {
@@ -572,6 +750,47 @@ pub fn run() {
                             mode: mode_to_string(mode),
                         });
                         let _ = tray_for_tap.set_tooltip(Some(&format!("vim-anywhere — {}", mode_to_string(mode))));
+                        // Show overlay in Normal/Visual, hide in Insert
+                        if let Some(overlay) = app_handle2.get_webview_window("overlay") {
+                            if mode == Mode::Insert {
+                                let _ = overlay.hide();
+                            } else {
+                                let _ = overlay.show();
+                            }
+                        }
+                        // Focus highlight: show/hide dim + border windows
+                        let focus_enabled = state_for_tap.config.lock()
+                            .map(|c| c.focus_highlight)
+                            .unwrap_or(false);
+                        if focus_enabled {
+                            if mode == Mode::Insert {
+                                // Hide both
+                                if let Some(dim) = app_handle2.get_webview_window("dim-overlay") {
+                                    let _ = dim.hide();
+                                }
+                                if let Some(border) = app_handle2.get_webview_window("focus-border") {
+                                    let _ = border.hide();
+                                }
+                                let _ = app_handle2.emit("focus-highlight-update", FocusHighlightPayload {
+                                    visible: false, x: 0.0, y: 0.0, w: 0.0, h: 0.0,
+                                    mode: mode_to_string(mode),
+                                });
+                            } else if let Some((x, y, w, h)) = accessibility::get_focused_window_frame() {
+                                // Position border window to match active window
+                                if let Some(border) = app_handle2.get_webview_window("focus-border") {
+                                    let _ = border.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
+                                    let _ = border.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                                    let _ = border.show();
+                                }
+                                if let Some(dim) = app_handle2.get_webview_window("dim-overlay") {
+                                    let _ = dim.show();
+                                }
+                                let _ = app_handle2.emit("focus-highlight-update", FocusHighlightPayload {
+                                    visible: true, x, y, w, h,
+                                    mode: mode_to_string(mode),
+                                });
+                            }
+                        }
                     };
 
                     // Always pass through Cmd shortcuts
@@ -590,6 +809,12 @@ pub fn run() {
                     // Check frontmost app
                     if let Some(app_info) = app_detection::get_frontmost_app() {
                         let cfg = state_for_tap.config.lock().unwrap();
+
+                        // Check excluded apps list (terminals, etc.)
+                        if cfg.excluded_apps.iter().any(|a| a == &app_info.bundle_id) {
+                            return false;
+                        }
+
                         let strategy = if let Some(app_cfg) = cfg.per_app.get(&app_info.bundle_id) {
                             match app_cfg.strategy.as_str() {
                                 "disabled" => app_detection::Strategy::Disabled,
@@ -662,53 +887,56 @@ pub fn run() {
                     }
 
                     // ── Normal / Visual mode ─────────────────────────────────
-                    // Get focused AX element — if we can't, pass through (like SketchyVim)
+                    // Get focused AX element — if we can't, pass through everything
                     let element = match accessibility::get_focused_element() {
                         Some(el) => el,
-                        None => {
-                            // No focused element — still handle Escape to enter normal mode
-                            if key_event.key == Key::Escape {
-                                let mut dummy = InMemoryBuffer::new("");
-                                let _ = eng.handle_key(&key_event, &mut dummy);
-                                notify_mode(eng.mode());
-                                return true;
-                            }
-                            return false;
-                        }
+                        None => return false,
                     };
+
+                    // Fetch AX role once — used for both editability check and focus tracking
+                    let role = accessibility::get_ax_role(&element).unwrap_or_default();
 
                     // Check if the focused element is an editable text field.
                     // Non-editable elements (e.g. web page body, buttons) should pass through.
-                    let is_editable = accessibility::is_editable_text(&element);
-                    let role = accessibility::get_ax_role(&element).unwrap_or_default();
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .create(true).append(true)
-                        .open("/tmp/vim-anywhere.log")
-                    {
-                        let _ = writeln!(f, "  AX: role={:?} editable={}", role, is_editable);
-                    }
+                    let is_editable = match role.as_str() {
+                        "AXTextArea" | "AXTextField" | "AXComboBox" => true,
+                        _ => accessibility::is_editable_text(&element),
+                    };
                     if !is_editable {
-                        if key_event.key == Key::Escape {
-                            let mut dummy = InMemoryBuffer::new("");
-                            let _ = eng.handle_key(&key_event, &mut dummy);
-                            notify_mode(eng.mode());
-                            return true;
-                        }
                         return false;
+                    }
+
+                    // Auto-reset to Insert mode when focused element changes
+                    {
+                        // Use AX role + description as a stable identity proxy.
+                        // Raw AXUIElement pointers are not guaranteed stable across queries.
+                        let element_id = {
+                            let desc = accessibility::get_ax_attribute_string(&element, "AXDescription").unwrap_or_default();
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            role.hash(&mut hasher);
+                            desc.hash(&mut hasher);
+                            hasher.finish()
+                        } as usize;
+                        let app_bundle = app_detection::get_frontmost_app()
+                            .map(|a| a.bundle_id)
+                            .unwrap_or_default();
+                        let current_focus = (app_bundle, element_id);
+                        let mut last_focus = state_for_tap.last_focused_element.lock().unwrap();
+                        let focus_changed = last_focus.as_ref() != Some(&current_focus);
+                        *last_focus = Some(current_focus);
+                        drop(last_focus);
+
+                        if focus_changed && current_mode != Mode::Insert {
+                            eng.reset_to_insert();
+                            notify_mode(Mode::Insert);
+                            return false; // pass through — user is now in Insert mode
+                        }
                     }
 
                     // Read text and cursor from AX — if either fails, pass through
                     let text = match accessibility::get_ax_value(&element) {
                         Some(t) => t,
-                        None => {
-                            if key_event.key == Key::Escape {
-                                let mut dummy = InMemoryBuffer::new("");
-                                let _ = eng.handle_key(&key_event, &mut dummy);
-                                notify_mode(eng.mode());
-                                return true;
-                            }
-                            return false;
-                        }
+                        None => return false,
                     };
                     let cursor_offset = accessibility::get_ax_selected_range(&element)
                         .map(|(loc, _)| loc)
@@ -741,6 +969,11 @@ pub fn run() {
                     }
 
                     let result = eng.handle_key(&key_event, &mut buffer);
+
+                    // Emit pending keys for overlay display
+                    let _ = app_handle2.emit("pending-keys-changed", PendingKeysPayload {
+                        keys: eng.pending_keys().to_string(),
+                    });
 
                     match result {
                         EngineResult::PassThrough => false,
@@ -781,13 +1014,7 @@ pub fn run() {
                 });
 
                 if let Err(e) = event_tap::start_event_tap(callback) {
-                    eprintln!("[vim-anywhere] {}", e);
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .create(true).append(true)
-                        .open("/tmp/vim-anywhere.log")
-                    {
-                        let _ = writeln!(f, "EVENT TAP FAILED: {}", e);
-                    }
+                    eprintln!("[vim-anywhere] Event tap failed: {}", e);
                 }
             });
 

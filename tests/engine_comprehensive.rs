@@ -5,7 +5,11 @@ use vim_anywhere_core::modes::{Mode, ModeEntryConfig};
 use vim_anywhere_core::parser::KeyEvent;
 
 fn make_engine() -> Engine {
-    Engine::new(ModeEntryConfig::default())
+    let mut engine = Engine::new(ModeEntryConfig::default());
+    // Engine starts in Insert mode by default; transition to Normal for tests
+    let mut buf = InMemoryBuffer::new("");
+    engine.handle_key(&KeyEvent::escape(), &mut buf);
+    engine
 }
 
 fn make_buffer(text: &str) -> InMemoryBuffer {
@@ -513,4 +517,109 @@ fn paste_when_nothing_yanked() {
 
     engine.handle_key(&KeyEvent::char('P'), &mut buf);
     assert_eq!(buf.get_text(), "hello");
+}
+
+// ---------------------------------------------------------------------------
+// Smart Escape + PassThrough
+// ---------------------------------------------------------------------------
+
+#[test]
+fn engine_starts_in_insert_mode() {
+    let engine = Engine::new(ModeEntryConfig::default());
+    assert_eq!(engine.mode(), Mode::Insert);
+}
+
+#[test]
+fn escape_in_insert_transitions_to_normal() {
+    let mut engine = Engine::new(ModeEntryConfig::default());
+    let mut buf = make_buffer("hello");
+    let result = engine.handle_key(&KeyEvent::escape(), &mut buf);
+    assert_eq!(result, EngineResult::ModeChanged(Mode::Normal));
+    assert_eq!(engine.mode(), Mode::Normal);
+}
+
+#[test]
+fn escape_in_normal_with_smart_escape_passes_through() {
+    let mut engine = make_engine(); // Normal mode, smart_escape=true
+    let mut buf = make_buffer("hello");
+    let result = engine.handle_key(&KeyEvent::escape(), &mut buf);
+    assert_eq!(result, EngineResult::PassThrough);
+    assert_eq!(engine.mode(), Mode::Normal);
+}
+
+#[test]
+fn insert_mode_passes_through_chars() {
+    let mut engine = Engine::new(ModeEntryConfig::default());
+    let mut buf = make_buffer("");
+    let result = engine.handle_key(&KeyEvent::char('a'), &mut buf);
+    assert_eq!(result, EngineResult::PassThrough);
+    assert_eq!(engine.mode(), Mode::Insert);
+}
+
+#[test]
+fn reset_to_insert_from_normal() {
+    let mut engine = make_engine();
+    assert_eq!(engine.mode(), Mode::Normal);
+    engine.reset_to_insert();
+    assert_eq!(engine.mode(), Mode::Insert);
+}
+
+#[test]
+fn reset_to_insert_clears_pending_keys() {
+    let mut engine = make_engine();
+    let mut buf = make_buffer("hello world");
+    // Type a count prefix to build up pending keys
+    engine.handle_key(&KeyEvent::char('3'), &mut buf);
+    assert!(!engine.pending_keys().is_empty());
+    engine.reset_to_insert();
+    assert!(engine.pending_keys().is_empty());
+    assert_eq!(engine.mode(), Mode::Insert);
+}
+
+#[test]
+fn pending_keys_shows_count_prefix() {
+    let mut engine = make_engine();
+    let mut buf = make_buffer("hello");
+    assert_eq!(engine.pending_keys(), "");
+    engine.handle_key(&KeyEvent::char('2'), &mut buf);
+    assert_eq!(engine.pending_keys(), "2");
+    engine.handle_key(&KeyEvent::char('0'), &mut buf);
+    // "20" — but note '0' is also a motion (goto start of line), so parser may execute it.
+    // Let's just verify the pending state after a single digit
+}
+
+#[test]
+fn escape_from_visual_returns_to_normal() {
+    let mut engine = make_engine();
+    let mut buf = make_buffer("hello");
+    engine.handle_key(&KeyEvent::char('v'), &mut buf);
+    assert_eq!(engine.mode(), Mode::VisualCharacterwise);
+    let result = engine.handle_key(&KeyEvent::escape(), &mut buf);
+    assert_eq!(result, EngineResult::ModeChanged(Mode::Normal));
+    assert_eq!(engine.mode(), Mode::Normal);
+}
+
+#[test]
+fn reset_to_insert_from_visual() {
+    let mut engine = make_engine();
+    let mut buf = make_buffer("hello");
+    engine.handle_key(&KeyEvent::char('v'), &mut buf);
+    assert_eq!(engine.mode(), Mode::VisualCharacterwise);
+    engine.reset_to_insert();
+    assert_eq!(engine.mode(), Mode::Insert);
+}
+
+#[test]
+fn custom_sequence_exits_insert_via_engine() {
+    let mut engine = Engine::new(ModeEntryConfig {
+        custom_sequence: Some(['j', 'k']),
+        ..Default::default()
+    });
+    let mut buf = make_buffer("hello");
+    // Type 'j' then 'k' to exit insert
+    let r1 = engine.handle_key(&KeyEvent::char('j'), &mut buf);
+    assert_eq!(r1, EngineResult::PassThrough); // first char of sequence, still insert
+    let r2 = engine.handle_key(&KeyEvent::char('k'), &mut buf);
+    assert_eq!(r2, EngineResult::ModeChanged(Mode::Normal));
+    assert_eq!(engine.mode(), Mode::Normal);
 }

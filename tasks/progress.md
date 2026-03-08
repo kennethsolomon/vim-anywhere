@@ -27,6 +27,18 @@
 | `cargo test --workspace` | all pass | 97 tests passed | pass |
 | `npm run tauri build` | produces .app | vim-anywhere.app + .dmg | pass |
 
+## Session: 2026-03-09
+- Phase 1 (Smart Escape): All 12 steps done — smart_escape default true, PassThrough variant, single Escape works
+- Phase 2 (Terminal Exclusion): All 4 steps done — kitty, Warp, WezTerm, Hyper added; excluded_apps in config; event handler check
+- Phase 3 (Auto-Insert): All 8 steps done — starts in Insert, reset_to_insert(), focus tracking, test updates
+- Test fix: `classic_double_escape_in_normal` needed `sm.set_mode(Mode::Normal)` since SM now starts in Insert
+- Test fix: `make_engine()` in engine_comprehensive.rs sends Escape to transition Insert→Normal
+- All 197 tests passing (42 engine + 88 core + 67 comprehensive)
+- Phase 4 (Mode Overlay): overlay.html/css/js redesigned — hidden class, flash animation, pending-keys display, show/hide on mode change, PendingKeysPayload emitted from Rust, Engine::pending_keys() exposed, overlay window 120x36
+- Phase 5 (Focus Highlight): get_focused_window_frame() in accessibility.rs, dim-overlay + focus-border windows, FocusHighlightPayload, mode-aware border color, clip-path dim, gated on config.focus_highlight, dim_background + dim_intensity config fields
+- Phase 6 (Onboarding): onboarding.html/css/js with permission stepper, complete_onboarding + open_accessibility_settings + open_input_monitoring_settings commands, auto-show on first launch, onboarding_complete config field
+- Phase 7 (Settings): Smart Escape / Double-Escape / Custom radio, Focus section (highlight, dim, intensity), Excluded Apps with add/remove, Re-run Setup button, set_excluded_app + remove_excluded_app + reopen_onboarding commands
+
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
 |-----------|-------|---------|------------|

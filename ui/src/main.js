@@ -39,7 +39,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     const mode = await invoke("get_mode");
     updateModeDisplay(mode);
-  } catch (e) {}
+  } catch (e) { console.warn("Failed to get mode:", e); }
 
   await listen("mode-changed", (event) => {
     updateModeDisplay(event.payload.mode);
@@ -48,40 +48,80 @@ window.addEventListener("DOMContentLoaded", async () => {
   // ── Mode Entry ──────────────────────────────────────────────────────────
   const modeRadios = document.querySelectorAll('input[name="mode-entry"]');
   const customSeqInput = document.getElementById("custom-sequence");
-  const doubleEscCheck = document.getElementById("double-esc");
+  const controlBracketCheck = document.getElementById("control-bracket");
 
   // Populate from config
   if (config.mode_entry) {
+    // Map config method to radio values
+    let radioValue = "escape"; // default: smart escape
+    if (config.mode_entry.double_escape_sends_real && !config.mode_entry.smart_escape) {
+      radioValue = "double-escape";
+    } else if (config.mode_entry.method === "custom") {
+      radioValue = "custom";
+    }
     modeRadios.forEach((r) => {
-      r.checked = r.value === config.mode_entry.method;
+      r.checked = r.value === radioValue;
     });
     if (customSeqInput && config.mode_entry.custom_sequence) {
       customSeqInput.value = config.mode_entry.custom_sequence;
     }
-    if (doubleEscCheck) {
-      doubleEscCheck.checked = config.mode_entry.double_escape_sends_real;
-    }
   }
 
   async function saveModeEntry() {
-    let method = "escape";
+    let selected = "escape";
     modeRadios.forEach((r) => {
-      if (r.checked) method = r.value;
+      if (r.checked) selected = r.value;
     });
+    // Map radio to config fields
+    let method = selected === "custom" ? "custom" : "escape";
+    let doubleEsc = selected === "double-escape";
+    let smartEsc = selected === "escape";
     const customSeq = customSeqInput ? customSeqInput.value || null : null;
-    const doubleEsc = doubleEscCheck ? doubleEscCheck.checked : true;
     await invoke("set_mode_entry", {
       method,
       customSequence: customSeq,
       doubleEscape: doubleEsc,
+      smartEscape: smartEsc,
     });
   }
 
   modeRadios.forEach((r) => r.addEventListener("change", saveModeEntry));
   if (customSeqInput)
     customSeqInput.addEventListener("change", saveModeEntry);
-  if (doubleEscCheck)
-    doubleEscCheck.addEventListener("change", saveModeEntry);
+
+  // ── Focus Highlight ────────────────────────────────────────────────────
+  const focusHighlightCheck = document.getElementById("focus-highlight");
+  const dimBackgroundCheck = document.getElementById("dim-background");
+  const dimIntensitySelect = document.getElementById("dim-intensity");
+
+  if (focusHighlightCheck && config.focus_highlight !== undefined) {
+    focusHighlightCheck.checked = config.focus_highlight;
+  }
+  if (dimBackgroundCheck && config.dim_background !== undefined) {
+    dimBackgroundCheck.checked = config.dim_background;
+  }
+  if (dimIntensitySelect && config.dim_intensity) {
+    dimIntensitySelect.value = config.dim_intensity;
+  }
+
+  if (focusHighlightCheck) {
+    focusHighlightCheck.addEventListener("change", async (e) => {
+      await invoke("set_focus_highlight", { enabled: e.target.checked });
+    });
+  }
+  if (dimBackgroundCheck) {
+    dimBackgroundCheck.addEventListener("change", async (e) => {
+      config.dim_background = e.target.checked;
+      config.focus_highlight = focusHighlightCheck ? focusHighlightCheck.checked : true;
+      await invoke("save_config_full", { config });
+    });
+  }
+  if (dimIntensitySelect) {
+    dimIntensitySelect.addEventListener("change", async (e) => {
+      config.dim_intensity = e.target.value;
+      await invoke("save_config_full", { config });
+    });
+  }
 
   // ── Theme ───────────────────────────────────────────────────────────────
   const themeSelect = document.getElementById("theme-select");
@@ -184,12 +224,23 @@ window.addEventListener("DOMContentLoaded", async () => {
       const m = mappings[i];
       const row = document.createElement("div");
       row.className = "mapping-row";
-      row.innerHTML = `
-        <span>${m.mode}</span>
-        <span class="mono">${m.from}</span>
-        <span class="mono">${m.to}</span>
-        <button class="btn-delete" data-index="${i}" title="Remove">x</button>
-      `;
+      const modeSpan = document.createElement("span");
+      modeSpan.textContent = m.mode;
+      const fromSpan = document.createElement("span");
+      fromSpan.className = "mono";
+      fromSpan.textContent = m.from;
+      const toSpan = document.createElement("span");
+      toSpan.className = "mono";
+      toSpan.textContent = m.to;
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn-delete";
+      delBtn.dataset.index = i;
+      delBtn.title = "Remove";
+      delBtn.textContent = "x";
+      row.appendChild(modeSpan);
+      row.appendChild(fromSpan);
+      row.appendChild(toSpan);
+      row.appendChild(delBtn);
       mappingsList.appendChild(row);
     }
 
@@ -292,15 +343,27 @@ window.addEventListener("DOMContentLoaded", async () => {
     for (const app of apps) {
       const row = document.createElement("div");
       row.className = "app-row";
-      row.innerHTML = `
-        <span title="${app.bundle_id}">${app.name}</span>
-        <select class="select-field app-strategy-select" data-bundle="${app.bundle_id}">
-          <option value="accessibility" ${app.strategy === "Accessibility" ? "selected" : ""}>Accessibility</option>
-          <option value="keyboard" ${app.strategy === "Keyboard" ? "selected" : ""}>Keyboard</option>
-          <option value="disabled" ${app.strategy === "Disabled" ? "selected" : ""}>Disabled</option>
-        </select>
-        <span><span class="status-dot ${app.status_class}"></span> ${app.status}</span>
-      `;
+      const nameSpan = document.createElement("span");
+      nameSpan.title = app.bundle_id;
+      nameSpan.textContent = app.name;
+      const select = document.createElement("select");
+      select.className = "select-field app-strategy-select";
+      select.dataset.bundle = app.bundle_id;
+      for (const [val, label] of [["accessibility", "Accessibility"], ["keyboard", "Keyboard"], ["disabled", "Disabled"]]) {
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = label;
+        if (app.strategy === label) opt.selected = true;
+        select.appendChild(opt);
+      }
+      const statusSpan = document.createElement("span");
+      const dot = document.createElement("span");
+      dot.className = "status-dot " + app.status_class;
+      statusSpan.appendChild(dot);
+      statusSpan.appendChild(document.createTextNode(" " + app.status));
+      row.appendChild(nameSpan);
+      row.appendChild(select);
+      row.appendChild(statusSpan);
       appTable.appendChild(row);
     }
 
@@ -315,17 +378,22 @@ window.addEventListener("DOMContentLoaded", async () => {
           "span:last-child .status-dot"
         );
         const textNode = e.target.parentElement.querySelector("span:last-child");
-        if (statusSpan) {
-          statusSpan.className = "status-dot";
+        if (textNode) {
+          textNode.textContent = "";
+          const newDot = document.createElement("span");
+          newDot.className = "status-dot";
           if (strategy === "accessibility") {
-            statusSpan.classList.add("active");
-            textNode.innerHTML = `<span class="status-dot active"></span> supported`;
+            newDot.classList.add("active");
+            textNode.appendChild(newDot);
+            textNode.appendChild(document.createTextNode(" supported"));
           } else if (strategy === "keyboard") {
-            statusSpan.classList.add("partial");
-            textNode.innerHTML = `<span class="status-dot partial"></span> partial`;
+            newDot.classList.add("partial");
+            textNode.appendChild(newDot);
+            textNode.appendChild(document.createTextNode(" partial"));
           } else {
-            statusSpan.classList.add("inactive");
-            textNode.innerHTML = `<span class="status-dot inactive"></span> excluded`;
+            newDot.classList.add("inactive");
+            textNode.appendChild(newDot);
+            textNode.appendChild(document.createTextNode(" excluded"));
           }
         }
       });
@@ -367,13 +435,73 @@ window.addEventListener("DOMContentLoaded", async () => {
         ? "granted"
         : "not granted";
     }
-  } catch (e) {}
+  } catch (e) { console.warn("Failed to get permissions:", e); }
 
   // ── Open Privacy Settings button ──────────────────────────────────────
   const openPrivacyBtn = document.getElementById("open-privacy-settings");
   if (openPrivacyBtn) {
     openPrivacyBtn.addEventListener("click", async () => {
       await invoke("open_privacy_settings");
+    });
+  }
+
+  // ── Re-run Setup button ───────────────────────────────────────────────
+  const reopenBtn = document.getElementById("reopen-onboarding");
+  if (reopenBtn) {
+    reopenBtn.addEventListener("click", async () => {
+      await invoke("reopen_onboarding");
+    });
+  }
+
+  // ── Excluded Apps ─────────────────────────────────────────────────────
+  const excludedList = document.getElementById("excluded-apps-list");
+  const addExcludedInput = document.getElementById("add-excluded-app");
+  const addExcludedBtn = document.getElementById("btn-add-excluded");
+
+  function renderExcludedApps(apps) {
+    if (!excludedList) return;
+    excludedList.innerHTML = "";
+    if (!apps || apps.length === 0) {
+      excludedList.innerHTML = '<span class="value-display">No excluded apps</span>';
+      return;
+    }
+    for (const app of apps) {
+      const row = document.createElement("div");
+      row.className = "setting-row";
+      const span = document.createElement("span");
+      span.className = "mono";
+      span.style.fontSize = "12px";
+      span.textContent = app;
+      const btn = document.createElement("button");
+      btn.className = "btn-delete";
+      btn.dataset.bundle = app;
+      btn.title = "Remove";
+      btn.textContent = "x";
+      row.appendChild(span);
+      row.appendChild(btn);
+      excludedList.appendChild(row);
+    }
+    excludedList.querySelectorAll(".btn-delete").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const bundleId = e.target.dataset.bundle;
+        await invoke("remove_excluded_app", { bundleId });
+        const updated = await invoke("load_config");
+        renderExcludedApps(updated.excluded_apps);
+      });
+    });
+  }
+
+  renderExcludedApps(config.excluded_apps);
+
+  if (addExcludedBtn && addExcludedInput) {
+    addExcludedBtn.addEventListener("click", async () => {
+      const bundleId = addExcludedInput.value.trim();
+      if (bundleId) {
+        await invoke("set_excluded_app", { bundleId });
+        addExcludedInput.value = "";
+        const updated = await invoke("load_config");
+        renderExcludedApps(updated.excluded_apps);
+      }
     });
   }
 });

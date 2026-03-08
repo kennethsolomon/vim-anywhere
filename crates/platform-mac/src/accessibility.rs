@@ -32,7 +32,23 @@ extern "C" {
     fn AXValueGetValue(value: *const c_void, value_type: u32, value_ptr: *mut c_void) -> bool;
 }
 
+const K_AX_VALUE_TYPE_CG_POINT: u32 = 1;
+const K_AX_VALUE_TYPE_CG_SIZE: u32 = 2;
 const K_AX_VALUE_TYPE_CF_RANGE: u32 = 4;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct CGPoint {
+    x: f64,
+    y: f64,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct CGSize {
+    width: f64,
+    height: f64,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -263,6 +279,72 @@ pub fn set_ax_selected_range(element: &AXElement, location: usize, length: usize
         );
         CFRelease(ax_value);
         result == K_AX_ERROR_SUCCESS
+    }
+}
+
+/// Get the frame (x, y, width, height) of the window containing the focused element.
+/// Traverses up via AXWindow attribute.
+pub fn get_focused_window_frame() -> Option<(f64, f64, f64, f64)> {
+    let element = get_focused_element()?;
+    unsafe {
+        // Get the AXWindow from the focused element
+        let attr = CFString::new("AXWindow");
+        let mut window_ref: *mut c_void = ptr::null_mut();
+        let result = AXUIElementCopyAttributeValue(
+            element.as_ptr(),
+            attr.as_concrete_TypeRef() as _,
+            &mut window_ref,
+        );
+        if result != K_AX_ERROR_SUCCESS || window_ref.is_null() {
+            return None;
+        }
+        let window = AXElement::from_owned(window_ref)?;
+
+        // Get AXPosition (CGPoint)
+        let pos_attr = CFString::new("AXPosition");
+        let mut pos_value: *mut c_void = ptr::null_mut();
+        let result = AXUIElementCopyAttributeValue(
+            window.as_ptr(),
+            pos_attr.as_concrete_TypeRef() as _,
+            &mut pos_value,
+        );
+        if result != K_AX_ERROR_SUCCESS || pos_value.is_null() {
+            return None;
+        }
+        let mut point = CGPoint { x: 0.0, y: 0.0 };
+        let ok = AXValueGetValue(
+            pos_value as _,
+            K_AX_VALUE_TYPE_CG_POINT,
+            &mut point as *mut CGPoint as *mut c_void,
+        );
+        CFRelease(pos_value);
+        if !ok {
+            return None;
+        }
+
+        // Get AXSize (CGSize)
+        let size_attr = CFString::new("AXSize");
+        let mut size_value: *mut c_void = ptr::null_mut();
+        let result = AXUIElementCopyAttributeValue(
+            window.as_ptr(),
+            size_attr.as_concrete_TypeRef() as _,
+            &mut size_value,
+        );
+        if result != K_AX_ERROR_SUCCESS || size_value.is_null() {
+            return None;
+        }
+        let mut size = CGSize { width: 0.0, height: 0.0 };
+        let ok = AXValueGetValue(
+            size_value as _,
+            K_AX_VALUE_TYPE_CG_SIZE,
+            &mut size as *mut CGSize as *mut c_void,
+        );
+        CFRelease(size_value);
+        if !ok {
+            return None;
+        }
+
+        Some((point.x, point.y, size.width, size.height))
     }
 }
 

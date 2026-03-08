@@ -22,7 +22,15 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - App-specific detection to disable interception in terminal emulators
 - Tauri-based settings UI with dark theme
 - User configuration via ~/.config/vim-anywhere/config.toml
-- Comprehensive test suite: 192 tests across core library and engine
+- Comprehensive test suite: 223 tests across core library and engine
+- Smart Escape: single Escape exits Insert/Visual to Normal; in Normal mode, passes Escape through to the app (e.g., close dialogs, deselect)
+- Auto-insert on focus change: automatically resets to Insert mode when switching between text fields
+- Terminal exclusion: auto-disables in terminal emulators (Terminal, iTerm2, Alacritty, Ghostty, Kitty, Warp, WezTerm, Hyper) with user-configurable excluded apps list
+- First-launch onboarding flow with guided Accessibility and Input Monitoring permission setup
+- Window focus highlight: dim overlay with glowing border on the active window in Normal/Visual mode
+- Redesigned mode overlay with pending keys display, flash transitions, and configurable position
+- Per-app strategy configuration (Accessibility, Keyboard, Disabled) via settings wizard
+- Bundle ID validation on excluded app entries (non-empty, max 255 chars, ASCII alphanumeric + dots/hyphens/underscores)
 
 ### Security
 - RAII wrapper (AXElement) for CoreFoundation objects preventing memory leaks

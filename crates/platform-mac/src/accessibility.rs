@@ -23,69 +23,102 @@ extern "C" {
 
 const K_AX_ERROR_SUCCESS: i32 = 0;
 
+/// RAII wrapper for AXUIElement pointers. Calls CFRelease on drop.
+pub struct AXElement {
+    ptr: *mut c_void,
+}
+
+impl AXElement {
+    /// Takes ownership of a CF object pointer (assumes +1 retain count).
+    pub fn from_owned(ptr: *mut c_void) -> Option<Self> {
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Self { ptr })
+        }
+    }
+
+    pub fn as_ptr(&self) -> *mut c_void {
+        self.ptr
+    }
+}
+
+impl Drop for AXElement {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe { CFRelease(self.ptr) };
+        }
+    }
+}
+
 pub fn is_accessibility_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
 
-pub fn get_focused_element() -> Option<*mut c_void> {
+pub fn get_focused_element() -> Option<AXElement> {
     unsafe {
         let system_wide = AXUIElementCreateSystemWide();
-        if system_wide.is_null() {
-            return None;
-        }
+        let system_guard = AXElement::from_owned(system_wide)?;
 
         let attr = CFString::new("AXFocusedApplication");
         let mut app_ref: *mut c_void = ptr::null_mut();
-        let result =
-            AXUIElementCopyAttributeValue(system_wide, attr.as_concrete_TypeRef() as _, &mut app_ref);
-        CFRelease(system_wide);
+        let result = AXUIElementCopyAttributeValue(
+            system_guard.as_ptr(),
+            attr.as_concrete_TypeRef() as _,
+            &mut app_ref,
+        );
 
         if result != K_AX_ERROR_SUCCESS || app_ref.is_null() {
             return None;
         }
+        let app_guard = AXElement::from_owned(app_ref)?;
 
         let attr_focused = CFString::new("AXFocusedUIElement");
         let mut element_ref: *mut c_void = ptr::null_mut();
         let result = AXUIElementCopyAttributeValue(
-            app_ref,
+            app_guard.as_ptr(),
             attr_focused.as_concrete_TypeRef() as _,
             &mut element_ref,
         );
-        CFRelease(app_ref);
 
         if result != K_AX_ERROR_SUCCESS || element_ref.is_null() {
             return None;
         }
 
-        Some(element_ref)
+        AXElement::from_owned(element_ref)
     }
 }
 
-pub fn get_ax_attribute_string(element: *mut c_void, attribute: &str) -> Option<String> {
+pub fn get_ax_attribute_string(element: &AXElement, attribute: &str) -> Option<String> {
     unsafe {
         let attr = CFString::new(attribute);
         let mut value: *mut c_void = ptr::null_mut();
-        let result =
-            AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef() as _, &mut value);
+        let result = AXUIElementCopyAttributeValue(
+            element.as_ptr(),
+            attr.as_concrete_TypeRef() as _,
+            &mut value,
+        );
 
         if result != K_AX_ERROR_SUCCESS || value.is_null() {
             return None;
         }
 
-        let cf_str = CFString::wrap_under_get_rule(value as _);
+        // AXUIElementCopyAttributeValue returns an owned reference (+1 retain),
+        // so use wrap_under_create_rule to take ownership correctly.
+        let cf_str = CFString::wrap_under_create_rule(value as _);
         Some(cf_str.to_string())
     }
 }
 
-pub fn get_ax_value(element: *mut c_void) -> Option<String> {
+pub fn get_ax_value(element: &AXElement) -> Option<String> {
     get_ax_attribute_string(element, "AXValue")
 }
 
-pub fn get_ax_role(element: *mut c_void) -> Option<String> {
+pub fn get_ax_role(element: &AXElement) -> Option<String> {
     get_ax_attribute_string(element, "AXRole")
 }
 
-pub fn check_ax_support(element: *mut c_void) -> AxSupport {
+pub fn check_ax_support(element: &AXElement) -> AxSupport {
     let role = get_ax_role(element);
     let value = get_ax_value(element);
 

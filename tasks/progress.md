@@ -42,3 +42,7 @@
   - Created `tests/engine_comprehensive.rs` (insert variants, operator+motion, text objects, visual, counts, edge cases)
   - Created `src/lib.rs` to export Engine/EngineResult for integration tests
   - Total: 205 tests passing
+- /security-check + fixes: Resolved all 9 findings
+  - HIGH: Enabled CSP in tauri.conf.json; added RAII AXElement wrapper in accessibility.rs
+  - MEDIUM: Fixed CFString ownership (wrap_under_create_rule); config load with warnings; robust home_dir; .gitignore secrets
+  - LOW: Removed unused greet command; Key::Unknown variant; send_key_event error logging; cleaned unused imports

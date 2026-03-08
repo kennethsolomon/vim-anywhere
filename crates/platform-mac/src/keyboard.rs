@@ -1,10 +1,6 @@
-use core_graphics::event::{
-    CGEvent, CGEventFlags, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-    CGEventType, EventField,
-};
+use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, EventField};
 use core_graphics::event_source::CGEventSource;
 use core_graphics::event_source::CGEventSourceStateID;
-use std::sync::mpsc;
 use vim_anywhere_core::parser::{Key, KeyEvent, Modifier};
 
 #[derive(Debug)]
@@ -30,7 +26,7 @@ pub fn cgevent_flags_to_modifiers(flags: CGEventFlags) -> Vec<Modifier> {
     mods
 }
 
-pub fn keycode_to_key(keycode: u16, flags: CGEventFlags) -> Key {
+pub fn keycode_to_key(keycode: u16, _flags: CGEventFlags) -> Key {
     match keycode {
         0x00 => Key::Char('a'),
         0x01 => Key::Char('s'),
@@ -105,7 +101,7 @@ pub fn keycode_to_key(keycode: u16, flags: CGEventFlags) -> Key {
         0x6D => Key::F(10),
         0x67 => Key::F(11),
         0x6F => Key::F(12),
-        _ => Key::Char('?'),
+        other => Key::Unknown(other),
     }
 }
 
@@ -164,16 +160,20 @@ pub fn cgevent_to_key_event(event: &CGEvent) -> KeyEvent {
 }
 
 pub fn send_key_event(keycode: u16, key_down: bool, flags: CGEventFlags) {
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState);
-    if let Ok(source) = source {
-        let event_type = if key_down {
-            CGEventType::KeyDown
-        } else {
-            CGEventType::KeyUp
-        };
-        if let Ok(event) = CGEvent::new_keyboard_event(source, keycode, key_down) {
+    let source = match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("[vim-anywhere] warning: failed to create CGEventSource for keycode {}", keycode);
+            return;
+        }
+    };
+    match CGEvent::new_keyboard_event(source, keycode, key_down) {
+        Ok(event) => {
             event.set_flags(flags);
             event.post(CGEventTapLocation::HID);
+        }
+        Err(_) => {
+            eprintln!("[vim-anywhere] warning: failed to create keyboard event for keycode {}", keycode);
         }
     }
 }

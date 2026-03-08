@@ -84,9 +84,11 @@ impl Default for Config {
 
 impl Config {
     pub fn config_path() -> PathBuf {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home)
-            .join(".config")
+        #[allow(deprecated)]
+        let home = std::env::home_dir()
+            .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("."));
+        home.join(".config")
             .join("vim-anywhere")
             .join("config.json")
     }
@@ -94,8 +96,18 @@ impl Config {
     pub fn load() -> Self {
         let path = Self::config_path();
         match fs::read_to_string(&path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-            Err(_) => Self::default(),
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!("[vim-anywhere] warning: config parse error at {}: {}", path.display(), e);
+                    Self::default()
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(e) => {
+                eprintln!("[vim-anywhere] warning: failed to read config at {}: {}", path.display(), e);
+                Self::default()
+            }
         }
     }
 

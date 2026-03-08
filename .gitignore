@@ -11,3 +11,10 @@
 
 # Logs
 *.log
+
+# Secrets and credentials
+.env*
+*.pem
+*.key
+*.p12
+credentials.*

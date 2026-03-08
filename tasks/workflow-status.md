@@ -11,9 +11,9 @@
 | 4 | /execute-plan | done | 18 phases complete, 97 tests pass, .app + .dmg built |
 | 5 | /commit | done | initial implementation commit df8fd85 |
 | 6 | /write-tests | done | 108 new tests (66 core + 42 engine), 205 total passing |
-| 7 | /commit | >> next << | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | loop until 0 issues |
+| 7 | /commit | done | 58673e2 — test suite commit |
+| 8 | /debug | skipped | user skipped to security-check |
+| 9 | /security-check | >> next << | attempt 1: 0 critical, 2 high, 3 medium, 4 low |
 | 10 | /commit | not yet | conditional |
 | 11 | /review | not yet | loop until 0 issues |
 | 12 | /commit | not yet | conditional |

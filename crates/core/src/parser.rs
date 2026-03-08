@@ -25,6 +25,7 @@ pub enum Key {
     PageUp,
     PageDown,
     F(u8),
+    Unknown(u16),
 }
 
 #[derive(Debug, Clone)]

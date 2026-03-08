@@ -13,9 +13,9 @@
 | 6 | /write-tests | done | 26 new tests, 223 total passing |
 | 7 | /commit | done | test commit 65ebff9 |
 | 8 | /debug | skipped | user skipped |
-| 9 | /security-check | >> next << | loop |
+| 9 | /security-check | done | clean on attempt 2 (0 findings) |
 | 10 | /commit | not yet | conditional |
-| 11 | /review | not yet | loop |
+| 11 | /review | >> next << | loop |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |
 | 14 | /release | not yet | optional |

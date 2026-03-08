@@ -163,3 +163,57 @@ _None found._
 | Medium   | 3 |
 | Low      | 3 |
 | **Total** | **6** |
+
+---
+
+# Security Audit — 2026-03-09 (Re-check)
+
+**Scope:** Security fix commit `04ae388` — verification that all 6 prior findings are resolved
+**Stack:** Rust / Tauri 2 / HTML+JS
+**Files audited:** 5 source files (changed in security fix commit)
+
+## Prior Findings Status (Audit 2 — all 6)
+
+- **MEDIUM XSS in renderExcludedApps()** — FIXED (DOM API with `textContent` at main.js:441-444)
+- **MEDIUM Debug logging src/lib.rs** — FIXED (all `/tmp/vim-anywhere.log` writes removed; no `/tmp/` references remain in .rs files)
+- **MEDIUM Debug logging ui/src-tauri/src/lib.rs** — FIXED (all 3 log blocks removed, `use std::io::Write` import removed)
+- **LOW Empty catch in onboarding.js** — FIXED (`console.warn("Permission check failed:", e)` at onboarding.js:21)
+- **LOW set_excluded_app no validation** — FIXED (non-empty, max 255 chars, ASCII alphanumeric + `.` `-` `_` at lib.rs:305-311)
+- **LOW Redundant AX query** — FIXED (new `get_window_frame(&AXElement)` public API at accessibility.rs:292-356; convenience wrapper `get_focused_window_frame()` preserved at accessibility.rs:285-290)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **A01 Broken Access Control** — OS-level permissions gate all functionality.
+- **A02 Cryptographic Failures** — No cryptography or secrets.
+- **A03 Injection** — `renderExcludedApps` now uses `textContent` (no XSS). Remaining `innerHTML` usages in `renderMappings` and `renderAppRows` interpolate data from user's own config and macOS NSWorkspace — same trust boundary, and CSP blocks inline script execution.
+- **A05 Security Misconfiguration** — CSP active. No debug logging. No unnecessary commands.
+- **A09 Logging** — No sensitive data logged. Debug log to `/tmp/` fully removed. Only `eprintln` for startup errors (no PII).
+- **A10 SSRF** — No network requests.
+- **Input validation** — `set_excluded_app` validates bundle ID format. Config deserialization uses typed serde.
+- **Memory safety** — RAII `AXElement` wrapper, correct `CFRelease` on all AXValue pointers, `wrap_under_create_rule` for CFString ownership.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |

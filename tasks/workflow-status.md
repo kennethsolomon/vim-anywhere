@@ -9,9 +9,9 @@
 | 2 | /frontend-design | skipped | bug-fix only, no UI design needed |
 | 3 | /write-plan | done | 4 phases + verify, single file |
 | 4 | /execute-plan | done | all 4 phases complete, 52 tests passing |
-| 5 | /commit | >> next << | |
-| 6 | /write-tests | not yet | |
-| 7 | /commit | not yet | conditional |
+| 5 | /commit | done | 835213f + 313bfa3 |
+| 6 | /write-tests | done | 7 new tests, 59 total passing |
+| 7 | /commit | >> next << | conditional |
 | 8 | /debug | not yet | optional |
 | 9 | /security-check | not yet | loop |
 | 10 | /commit | not yet | conditional |

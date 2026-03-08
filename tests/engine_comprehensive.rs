@@ -623,3 +623,94 @@ fn custom_sequence_exits_insert_via_engine() {
     assert_eq!(r2, EngineResult::ModeChanged(Mode::Normal));
     assert_eq!(engine.mode(), Mode::Normal);
 }
+
+// ---------------------------------------------------------------------------
+// 8. Mode management contracts (used by event handler for seamless behavior)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn reset_to_insert_is_idempotent() {
+    // Event handler may call reset_to_insert multiple times (e.g., repeated non-text focus)
+    let mut engine = Engine::new(ModeEntryConfig::default());
+    assert_eq!(engine.mode(), Mode::Insert);
+    engine.reset_to_insert();
+    assert_eq!(engine.mode(), Mode::Insert);
+    engine.reset_to_insert();
+    assert_eq!(engine.mode(), Mode::Insert);
+}
+
+#[test]
+fn reset_to_insert_from_visual_linewise() {
+    let mut engine = make_engine();
+    let mut buf = make_buffer("hello\nworld");
+    engine.handle_key(&KeyEvent::char('V'), &mut buf);
+    assert_eq!(engine.mode(), Mode::VisualLinewise);
+    engine.reset_to_insert();
+    assert_eq!(engine.mode(), Mode::Insert);
+    assert!(engine.pending_keys().is_empty());
+}
+
+#[test]
+fn reset_to_insert_clears_operator_pending() {
+    // If user is mid-command (e.g., typed "3d" waiting for motion) and focus changes,
+    // reset_to_insert must clear that pending state
+    let mut engine = make_engine();
+    let mut buf = make_buffer("hello world");
+    engine.handle_key(&KeyEvent::char('3'), &mut buf); // count prefix shows in pending
+    assert!(!engine.pending_keys().is_empty());
+    engine.handle_key(&KeyEvent::char('d'), &mut buf); // operator pending
+    engine.reset_to_insert();
+    assert_eq!(engine.mode(), Mode::Insert);
+    assert!(engine.pending_keys().is_empty());
+}
+
+#[test]
+fn escape_after_reset_to_insert_transitions_to_normal() {
+    // After auto-reset to Insert, Escape should still work to enter Normal
+    let mut engine = make_engine(); // Normal mode
+    engine.reset_to_insert();
+    assert_eq!(engine.mode(), Mode::Insert);
+    let mut buf = make_buffer("hello");
+    let result = engine.handle_key(&KeyEvent::escape(), &mut buf);
+    assert_eq!(result, EngineResult::ModeChanged(Mode::Normal));
+    assert_eq!(engine.mode(), Mode::Normal);
+}
+
+#[test]
+fn normal_mode_keys_after_reset_work_correctly() {
+    // After reset→Insert→Escape→Normal, vim motions should work
+    let mut engine = make_engine();
+    engine.reset_to_insert();
+    let mut buf = make_buffer("hello world");
+    // Back to Normal
+    engine.handle_key(&KeyEvent::escape(), &mut buf);
+    assert_eq!(engine.mode(), Mode::Normal);
+    // dw should delete first word
+    engine.handle_key(&KeyEvent::char('d'), &mut buf);
+    let result = engine.handle_key(&KeyEvent::char('w'), &mut buf);
+    assert_eq!(result, EngineResult::BufferModified);
+    assert_eq!(buf.line_at(0).unwrap(), "world");
+}
+
+#[test]
+fn insert_mode_non_escape_keys_pass_through() {
+    // Event handler relies on non-escape keys passing through in Insert mode
+    let mut engine = Engine::new(ModeEntryConfig::default());
+    let mut buf = make_buffer("");
+    for ch in ['a', 'b', 'c', '1', ' ', '.'] {
+        let result = engine.handle_key(&KeyEvent::char(ch), &mut buf);
+        assert_eq!(result, EngineResult::PassThrough);
+        assert_eq!(engine.mode(), Mode::Insert);
+    }
+}
+
+#[test]
+fn smart_escape_normal_mode_does_not_change_mode() {
+    // Event handler uses this to pass Escape through to the app in Normal mode
+    let mut engine = make_engine();
+    assert_eq!(engine.mode(), Mode::Normal);
+    let mut buf = make_buffer("hello");
+    let result = engine.handle_key(&KeyEvent::escape(), &mut buf);
+    assert_eq!(result, EngineResult::PassThrough);
+    assert_eq!(engine.mode(), Mode::Normal); // stays Normal, not Insert
+}

@@ -166,6 +166,8 @@ impl Engine {
                 EngineResult::BufferModified
             }
             ParsedCommand::OpenUrl => EngineResult::Suppressed,
+            ParsedCommand::Undo => EngineResult::SimulateUndo,
+            ParsedCommand::Redo => EngineResult::SimulateRedo,
 
             // Visual operations
             ParsedCommand::VisualOperation(op) => {
@@ -717,4 +719,8 @@ pub enum EngineResult {
     BufferModified,
     /// Double-escape detected — pass a real Escape key through to the app.
     SendRealEscape,
+    /// Simulate native undo (Cmd+Z).
+    SimulateUndo,
+    /// Simulate native redo (Cmd+Shift+Z).
+    SimulateRedo,
 }

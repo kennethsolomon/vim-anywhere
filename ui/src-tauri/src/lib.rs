@@ -12,6 +12,7 @@ use vim_anywhere_core::parser::Key;
 use vim_anywhere_platform_mac::accessibility;
 use vim_anywhere_platform_mac::app_detection;
 use vim_anywhere_platform_mac::event_tap;
+use vim_anywhere_platform_mac::keyboard;
 
 use vim_anywhere::EngineResult;
 
@@ -613,7 +614,7 @@ pub fn run() {
                                 return false;
                             }
                             drop(cfg);
-                            if !matches!(ch, 'b' | 'd' | 'f' | 'u') {
+                            if !matches!(ch, 'b' | 'd' | 'f' | 'u' | 'r') {
                                 return false;
                             }
                         }
@@ -743,7 +744,15 @@ pub fn run() {
 
                     match result {
                         EngineResult::PassThrough => false,
-                        EngineResult::Suppressed => true,
+                        EngineResult::Suppressed => {
+                            // Refresh block cursor highlight on suppressed keys
+                            if current_mode == Mode::Normal {
+                                if let Some((loc, _)) = accessibility::get_ax_selected_range(&element) {
+                                    let _ = accessibility::set_ax_selected_range(&element, loc, 1);
+                                }
+                            }
+                            true
+                        }
                         EngineResult::SendRealEscape => false,
                         EngineResult::ModeChanged(new_mode) => {
                             notify_mode(new_mode);
@@ -756,6 +765,16 @@ pub fn run() {
                             if new_mode != current_mode {
                                 notify_mode(new_mode);
                             }
+                            true
+                        }
+                        EngineResult::SimulateUndo => {
+                            drop(eng);
+                            keyboard::send_undo();
+                            true
+                        }
+                        EngineResult::SimulateRedo => {
+                            drop(eng);
+                            keyboard::send_redo();
                             true
                         }
                     }

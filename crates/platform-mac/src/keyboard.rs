@@ -176,3 +176,16 @@ pub fn send_key_sequence(keycode: u16, flags: CGEventFlags) {
     send_key_event(keycode, true, flags);
     send_key_event(keycode, false, flags);
 }
+
+/// Simulate Cmd+Z (native undo).
+pub fn send_undo() {
+    send_key_sequence(0x06, CGEventFlags::CGEventFlagCommand);
+}
+
+/// Simulate Cmd+Shift+Z (native redo).
+pub fn send_redo() {
+    send_key_sequence(
+        0x06,
+        CGEventFlags::CGEventFlagCommand | CGEventFlags::CGEventFlagShift,
+    );
+}

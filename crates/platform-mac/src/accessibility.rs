@@ -171,8 +171,18 @@ impl AxSupport {
 }
 
 /// Check if the focused element is an editable text field.
-/// Uses AXUIElementIsAttributeSettable to determine if AXValue can be written.
+/// Known text input roles (AXTextArea, AXTextField, AXComboBox) are treated as
+/// editable directly — AXUIElementIsAttributeSettable can report false for these
+/// in some apps even though they accept input.  For other roles (e.g. AXWebArea)
+/// we fall back to the settable check.
 pub fn is_editable_text(element: &AXElement) -> bool {
+    if let Some(role) = get_ax_role(element) {
+        match role.as_str() {
+            "AXTextArea" | "AXTextField" | "AXComboBox" => return true,
+            _ => {}
+        }
+    }
+
     unsafe {
         let attr = CFString::new("AXValue");
         let mut settable = false;

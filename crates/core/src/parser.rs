@@ -197,6 +197,8 @@ pub enum ParsedCommand {
     VisualOperation(Operator),
     VisualSwapAnchor,
     RepeatLastChange,
+    Undo,
+    Redo,
     Escape,
     Incomplete,
     Invalid,
@@ -407,6 +409,11 @@ impl KeyParser {
                     self.reset();
                     return cmd;
                 }
+                'r' => {
+                    let cmd = ParsedCommand::Redo;
+                    self.reset();
+                    return cmd;
+                }
                 _ => {
                     self.reset();
                     return ParsedCommand::Invalid;
@@ -554,6 +561,9 @@ impl KeyParser {
 
             // Dot repeat
             '.' => ParsedCommand::RepeatLastChange,
+
+            // Undo
+            'u' => ParsedCommand::Undo,
 
             // Visual mode
             'v' => ParsedCommand::EnterVisualCharacterwise,

@@ -34,3 +34,11 @@
 | 2026-03-08 | Rust 2024 edition: chars().enumerate().rev() not allowed | 1 | Used manual Vec<char> iteration |
 | 2026-03-08 | Rust 2024 edition: extern blocks must be unsafe | 1 | Downgraded platform-mac to edition 2021 |
 | 2026-03-08 | dw test off-by-one | 1 | Added inclusive/exclusive motion classification |
+
+## Session: 2026-03-08 (continued)
+- Initialized git repo, committed initial implementation (df8fd85)
+- /write-tests: Added 108 new tests (66 core comprehensive + 42 engine integration)
+  - Created `crates/core/tests/comprehensive.rs` (motions, text objects, buffer, modes)
+  - Created `tests/engine_comprehensive.rs` (insert variants, operator+motion, text objects, visual, counts, edge cases)
+  - Created `src/lib.rs` to export Engine/EngineResult for integration tests
+  - Total: 205 tests passing

@@ -16,6 +16,10 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub focus_highlight: bool,
     #[serde(default = "default_true")]
+    pub dim_background: bool,
+    #[serde(default = "default_dim_intensity")]
+    pub dim_intensity: String,
+    #[serde(default = "default_true")]
     pub show_overlay: bool,
     #[serde(default = "default_true")]
     pub menu_bar_icon: bool,
@@ -25,8 +29,12 @@ pub struct Config {
     pub custom_mappings: Vec<CustomMapping>,
     #[serde(default)]
     pub disabled_motions: Vec<String>,
+    #[serde(default = "default_excluded_apps")]
+    pub excluded_apps: Vec<String>,
     #[serde(default)]
     pub per_app: HashMap<String, AppConfig>,
+    #[serde(default)]
+    pub onboarding_complete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,8 +43,10 @@ pub struct ModeEntryConfigJson {
     pub method: String,
     #[serde(default)]
     pub custom_sequence: Option<String>,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub double_escape_sends_real: bool,
+    #[serde(default = "default_true")]
+    pub smart_escape: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,14 +69,28 @@ fn default_overlay_size() -> String { "medium".to_string() }
 fn default_overlay_position() -> String { "bottom-right".to_string() }
 fn default_true() -> bool { true }
 fn default_mode_entry() -> String { "escape".to_string() }
+fn default_dim_intensity() -> String { "light".to_string() }
 fn default_strategy() -> String { "accessibility".to_string() }
+fn default_excluded_apps() -> Vec<String> {
+    vec![
+        "com.apple.Terminal".to_string(),
+        "com.googlecode.iterm2".to_string(),
+        "io.alacritty".to_string(),
+        "com.mitchellh.ghostty".to_string(),
+        "net.kovidgoyal.kitty".to_string(),
+        "dev.warp.Warp-Stable".to_string(),
+        "com.github.wez.wezterm".to_string(),
+        "co.zeit.hyper".to_string(),
+    ]
+}
 
 impl Default for ModeEntryConfigJson {
     fn default() -> Self {
         Self {
             method: default_mode_entry(),
             custom_sequence: None,
-            double_escape_sends_real: true,
+            double_escape_sends_real: false,
+            smart_escape: true,
         }
     }
 }
@@ -79,12 +103,16 @@ impl Default for Config {
             overlay_size: default_overlay_size(),
             overlay_position: default_overlay_position(),
             focus_highlight: true,
+            dim_background: true,
+            dim_intensity: default_dim_intensity(),
             show_overlay: true,
             menu_bar_icon: true,
             launch_at_login: false,
             custom_mappings: vec![],
             disabled_motions: vec![],
+            excluded_apps: default_excluded_apps(),
             per_app: HashMap::new(),
+            onboarding_complete: false,
         }
     }
 }

@@ -5,7 +5,11 @@ use vim_anywhere_core::modes::{Mode, ModeEntryConfig};
 use vim_anywhere_core::parser::KeyEvent;
 
 fn make_engine() -> Engine {
-    Engine::new(ModeEntryConfig::default())
+    let mut engine = Engine::new(ModeEntryConfig::default());
+    // Engine starts in Insert mode by default; transition to Normal for tests
+    let mut buf = InMemoryBuffer::new("");
+    engine.handle_key(&KeyEvent::escape(), &mut buf);
+    engine
 }
 
 fn make_buffer(text: &str) -> InMemoryBuffer {

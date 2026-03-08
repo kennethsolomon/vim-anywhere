@@ -66,7 +66,14 @@ pub enum Strategy {
 pub fn default_strategy_for_app(bundle_id: &str) -> Strategy {
     match bundle_id {
         // Terminal apps — disable vim-anywhere (they have their own vim)
-        "com.apple.Terminal" | "com.googlecode.iterm2" | "io.alacritty" | "com.mitchellh.ghostty" => {
+        "com.apple.Terminal"
+        | "com.googlecode.iterm2"
+        | "io.alacritty"
+        | "com.mitchellh.ghostty"
+        | "net.kovidgoyal.kitty"
+        | "dev.warp.Warp-Stable"
+        | "com.github.wez.wezterm"
+        | "co.zeit.hyper" => {
             Strategy::Disabled
         }
         // Known good accessibility support

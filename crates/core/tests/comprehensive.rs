@@ -521,7 +521,9 @@ mod mode_tests {
     use super::*;
 
     fn make_sm() -> ModeStateMachine {
-        ModeStateMachine::new(ModeEntryConfig::default())
+        let mut sm = ModeStateMachine::new(ModeEntryConfig::default());
+        sm.set_mode(Mode::Normal);
+        sm
     }
 
     #[test]
@@ -530,7 +532,6 @@ mod mode_tests {
             control_bracket: false,
             ..Default::default()
         });
-        sm.enter_insert(InsertVariant::I);
         let t = sm.handle_control_bracket();
         assert_eq!(t, ModeTransition::None);
         assert_eq!(sm.mode(), Mode::Insert); // stays in insert
@@ -560,7 +561,6 @@ mod mode_tests {
             custom_sequence: Some(['j', 'k']),
             ..Default::default()
         });
-        sm.enter_insert(InsertVariant::I);
         assert_eq!(sm.pending_sequence_char(), None);
 
         sm.handle_insert_char('j');
@@ -573,7 +573,7 @@ mod mode_tests {
 
     #[test]
     fn set_mode_direct() {
-        let mut sm = make_sm();
+        let mut sm = make_sm(); // starts in Normal (via set_mode in make_sm)
         assert_eq!(sm.mode(), Mode::Normal);
 
         sm.set_mode(Mode::Insert);
@@ -615,11 +615,23 @@ mod mode_tests {
     }
 
     #[test]
-    fn escape_in_normal_returns_none() {
+    fn escape_in_normal_passthrough_with_smart_escape() {
+        // Default config has smart_escape: true — Escape in Normal passes through
+        let mut sm = ModeStateMachine::new(ModeEntryConfig::default());
+        sm.set_mode(Mode::Normal);
+        let t = sm.handle_escape();
+        assert_eq!(t, ModeTransition::PassThrough);
+        assert_eq!(sm.mode(), Mode::Normal);
+    }
+
+    #[test]
+    fn escape_in_normal_returns_none_without_smart_escape() {
         let mut sm = ModeStateMachine::new(ModeEntryConfig {
+            smart_escape: false,
             double_escape_sends_real: false,
             ..Default::default()
         });
+        sm.set_mode(Mode::Normal);
         let t = sm.handle_escape();
         assert_eq!(t, ModeTransition::None);
         assert_eq!(sm.mode(), Mode::Normal);

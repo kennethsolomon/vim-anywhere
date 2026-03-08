@@ -10,7 +10,6 @@ pub enum Mode {
 
 #[derive(Debug, Clone)]
 pub struct ModeEntryConfig {
-    pub escape_key: bool,
     pub double_escape_sends_real: bool,
     pub smart_escape: bool,
     pub custom_sequence: Option<[char; 2]>,
@@ -22,7 +21,6 @@ pub struct ModeEntryConfig {
 impl Default for ModeEntryConfig {
     fn default() -> Self {
         Self {
-            escape_key: true,
             double_escape_sends_real: false,
             smart_escape: true,
             custom_sequence: None,

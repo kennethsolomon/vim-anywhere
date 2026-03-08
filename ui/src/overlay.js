@@ -26,7 +26,7 @@ function updateMode(mode) {
 }
 
 // Get initial mode
-invoke("get_mode").then(updateMode).catch(() => {});
+invoke("get_mode").then(updateMode).catch((e) => console.warn("Failed to get mode:", e));
 
 // Listen for mode changes
 listen("mode-changed", (event) => {

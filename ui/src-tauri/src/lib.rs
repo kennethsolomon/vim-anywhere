@@ -33,7 +33,6 @@ fn config_to_mode_entry(cfg: &Config) -> ModeEntryConfig {
     });
 
     ModeEntryConfig {
-        escape_key: cfg.mode_entry.method == "escape",
         control_bracket: cfg.mode_entry.method == "control-bracket",
         custom_sequence: if cfg.mode_entry.method == "custom" { custom_seq } else { None },
         double_escape_sends_real: cfg.mode_entry.double_escape_sends_real,
@@ -894,9 +893,15 @@ pub fn run() {
                         None => return false,
                     };
 
+                    // Fetch AX role once — used for both editability check and focus tracking
+                    let role = accessibility::get_ax_role(&element).unwrap_or_default();
+
                     // Check if the focused element is an editable text field.
                     // Non-editable elements (e.g. web page body, buttons) should pass through.
-                    let is_editable = accessibility::is_editable_text(&element);
+                    let is_editable = match role.as_str() {
+                        "AXTextArea" | "AXTextField" | "AXComboBox" => true,
+                        _ => accessibility::is_editable_text(&element),
+                    };
                     if !is_editable {
                         return false;
                     }
@@ -906,7 +911,6 @@ pub fn run() {
                         // Use AX role + description as a stable identity proxy.
                         // Raw AXUIElement pointers are not guaranteed stable across queries.
                         let element_id = {
-                            let role = accessibility::get_ax_role(&element).unwrap_or_default();
                             let desc = accessibility::get_ax_attribute_string(&element, "AXDescription").unwrap_or_default();
                             let mut hasher = std::collections::hash_map::DefaultHasher::new();
                             role.hash(&mut hasher);

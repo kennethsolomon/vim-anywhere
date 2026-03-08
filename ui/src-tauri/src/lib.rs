@@ -778,8 +778,8 @@ pub fn run() {
                             } else if let Some((x, y, w, h)) = accessibility::get_focused_window_frame() {
                                 // Position border window to match active window
                                 if let Some(border) = app_handle2.get_webview_window("focus-border") {
-                                    let _ = border.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
-                                    let _ = border.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                                    let _ = border.set_position(tauri::LogicalPosition::new(x, y));
+                                    let _ = border.set_size(tauri::LogicalSize::new(w, h));
                                     let _ = border.show();
                                 }
                                 if let Some(dim) = app_handle2.get_webview_window("dim-overlay") {
@@ -861,6 +861,23 @@ pub fn run() {
                             return false; // pass through backspace, arrows, etc.
                         }
 
+                        // Only allow Escape→Normal when focused on an editable text field.
+                        // Non-text elements (web page body, buttons, etc.) get real Escape.
+                        if is_escape {
+                            let is_in_text_field = accessibility::get_focused_element()
+                                .map(|el| {
+                                    let role = accessibility::get_ax_role(&el).unwrap_or_default();
+                                    match role.as_str() {
+                                        "AXTextArea" | "AXTextField" | "AXComboBox" => true,
+                                        _ => accessibility::is_editable_text(&el),
+                                    }
+                                })
+                                .unwrap_or(false);
+                            if !is_in_text_field {
+                                return false; // pass Escape through, stay in Insert
+                            }
+                        }
+
                         let mut dummy_buffer = InMemoryBuffer::new("");
                         let result = eng.handle_key(&key_event, &mut dummy_buffer);
 
@@ -868,7 +885,7 @@ pub fn run() {
                             EngineResult::ModeChanged(new_mode) => {
                                 // Mode exit (Escape or custom sequence) — suppress and sync
                                 notify_mode(new_mode);
-                                // Set block cursor when entering normal mode
+                                // Set block cursor when entering normal mode (element already confirmed editable above)
                                 if new_mode == Mode::Normal {
                                     if let Some(el) = accessibility::get_focused_element() {
                                         if let Some((loc, _)) = accessibility::get_ax_selected_range(&el) {
@@ -903,6 +920,11 @@ pub fn run() {
                         _ => accessibility::is_editable_text(&element),
                     };
                     if !is_editable {
+                        // Auto-reset to Insert when focus leaves a text field
+                        if current_mode != Mode::Insert {
+                            eng.reset_to_insert();
+                            notify_mode(Mode::Insert);
+                        }
                         return false;
                     }
 

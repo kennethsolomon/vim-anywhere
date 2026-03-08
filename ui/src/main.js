@@ -48,28 +48,34 @@ window.addEventListener("DOMContentLoaded", async () => {
   // ── Mode Entry ──────────────────────────────────────────────────────────
   const modeRadios = document.querySelectorAll('input[name="mode-entry"]');
   const customSeqInput = document.getElementById("custom-sequence");
-  const doubleEscCheck = document.getElementById("double-esc");
+  const controlBracketCheck = document.getElementById("control-bracket");
 
   // Populate from config
   if (config.mode_entry) {
+    // Map config method to radio values
+    let radioValue = "escape"; // default: smart escape
+    if (config.mode_entry.double_escape_sends_real && !config.mode_entry.smart_escape) {
+      radioValue = "double-escape";
+    } else if (config.mode_entry.method === "custom") {
+      radioValue = "custom";
+    }
     modeRadios.forEach((r) => {
-      r.checked = r.value === config.mode_entry.method;
+      r.checked = r.value === radioValue;
     });
     if (customSeqInput && config.mode_entry.custom_sequence) {
       customSeqInput.value = config.mode_entry.custom_sequence;
     }
-    if (doubleEscCheck) {
-      doubleEscCheck.checked = config.mode_entry.double_escape_sends_real;
-    }
   }
 
   async function saveModeEntry() {
-    let method = "escape";
+    let selected = "escape";
     modeRadios.forEach((r) => {
-      if (r.checked) method = r.value;
+      if (r.checked) selected = r.value;
     });
+    // Map radio to config fields
+    let method = selected === "custom" ? "custom" : "escape";
+    let doubleEsc = selected === "double-escape";
     const customSeq = customSeqInput ? customSeqInput.value || null : null;
-    const doubleEsc = doubleEscCheck ? doubleEscCheck.checked : true;
     await invoke("set_mode_entry", {
       method,
       customSequence: customSeq,
@@ -80,8 +86,40 @@ window.addEventListener("DOMContentLoaded", async () => {
   modeRadios.forEach((r) => r.addEventListener("change", saveModeEntry));
   if (customSeqInput)
     customSeqInput.addEventListener("change", saveModeEntry);
-  if (doubleEscCheck)
-    doubleEscCheck.addEventListener("change", saveModeEntry);
+
+  // ── Focus Highlight ────────────────────────────────────────────────────
+  const focusHighlightCheck = document.getElementById("focus-highlight");
+  const dimBackgroundCheck = document.getElementById("dim-background");
+  const dimIntensitySelect = document.getElementById("dim-intensity");
+
+  if (focusHighlightCheck && config.focus_highlight !== undefined) {
+    focusHighlightCheck.checked = config.focus_highlight;
+  }
+  if (dimBackgroundCheck && config.dim_background !== undefined) {
+    dimBackgroundCheck.checked = config.dim_background;
+  }
+  if (dimIntensitySelect && config.dim_intensity) {
+    dimIntensitySelect.value = config.dim_intensity;
+  }
+
+  if (focusHighlightCheck) {
+    focusHighlightCheck.addEventListener("change", async (e) => {
+      await invoke("set_focus_highlight", { enabled: e.target.checked });
+    });
+  }
+  if (dimBackgroundCheck) {
+    dimBackgroundCheck.addEventListener("change", async (e) => {
+      config.dim_background = e.target.checked;
+      config.focus_highlight = focusHighlightCheck ? focusHighlightCheck.checked : true;
+      await invoke("save_config_full", { config });
+    });
+  }
+  if (dimIntensitySelect) {
+    dimIntensitySelect.addEventListener("change", async (e) => {
+      config.dim_intensity = e.target.value;
+      await invoke("save_config_full", { config });
+    });
+  }
 
   // ── Theme ───────────────────────────────────────────────────────────────
   const themeSelect = document.getElementById("theme-select");
@@ -374,6 +412,59 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (openPrivacyBtn) {
     openPrivacyBtn.addEventListener("click", async () => {
       await invoke("open_privacy_settings");
+    });
+  }
+
+  // ── Re-run Setup button ───────────────────────────────────────────────
+  const reopenBtn = document.getElementById("reopen-onboarding");
+  if (reopenBtn) {
+    reopenBtn.addEventListener("click", async () => {
+      await invoke("reopen_onboarding");
+    });
+  }
+
+  // ── Excluded Apps ─────────────────────────────────────────────────────
+  const excludedList = document.getElementById("excluded-apps-list");
+  const addExcludedInput = document.getElementById("add-excluded-app");
+  const addExcludedBtn = document.getElementById("btn-add-excluded");
+
+  function renderExcludedApps(apps) {
+    if (!excludedList) return;
+    excludedList.innerHTML = "";
+    if (!apps || apps.length === 0) {
+      excludedList.innerHTML = '<span class="value-display">No excluded apps</span>';
+      return;
+    }
+    for (const app of apps) {
+      const row = document.createElement("div");
+      row.className = "setting-row";
+      row.innerHTML = `
+        <span class="mono" style="font-size:12px">${app}</span>
+        <button class="btn-delete" data-bundle="${app}" title="Remove">x</button>
+      `;
+      excludedList.appendChild(row);
+    }
+    excludedList.querySelectorAll(".btn-delete").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const bundleId = e.target.dataset.bundle;
+        await invoke("remove_excluded_app", { bundleId });
+        const updated = await invoke("load_config");
+        renderExcludedApps(updated.excluded_apps);
+      });
+    });
+  }
+
+  renderExcludedApps(config.excluded_apps);
+
+  if (addExcludedBtn && addExcludedInput) {
+    addExcludedBtn.addEventListener("click", async () => {
+      const bundleId = addExcludedInput.value.trim();
+      if (bundleId) {
+        await invoke("set_excluded_app", { bundleId });
+        addExcludedInput.value = "";
+        const updated = await invoke("load_config");
+        renderExcludedApps(updated.excluded_apps);
+      }
     });
   }
 });

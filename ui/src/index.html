@@ -40,25 +40,47 @@
         <div class="section-label">Mode Entry</div>
         <div class="setting-row">
           <label class="setting-label">
-            <input type="radio" name="mode-entry" value="escape" checked /> Escape key
+            <input type="radio" name="mode-entry" value="escape" checked /> Smart Escape <span class="hint">(recommended)</span>
           </label>
         </div>
         <div class="setting-row">
           <label class="setting-label">
-            <input type="radio" name="mode-entry" value="control-bracket" /> Control-[
+            <input type="radio" name="mode-entry" value="double-escape" /> Classic Double-Escape
           </label>
         </div>
         <div class="setting-row">
           <label class="setting-label">
-            <input type="radio" name="mode-entry" value="custom" /> Custom sequence
+            <input type="radio" name="mode-entry" value="custom" /> Custom sequence only
           </label>
           <input type="text" class="input-field input-small" id="custom-sequence" placeholder="jk" maxlength="2" />
         </div>
         <div class="setting-row">
           <label class="checkbox-label">
-            <input type="checkbox" id="double-esc" checked />
-            <span>Double escape sends real Esc</span>
+            <input type="checkbox" id="control-bracket" checked />
+            <span>Also use Control-[</span>
           </label>
+        </div>
+
+        <div class="section-label">Focus Highlight</div>
+        <div class="setting-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="focus-highlight" checked />
+            <span>Window border highlight</span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="dim-background" checked />
+            <span>Dim background</span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Dim intensity</span>
+          <select class="select-field" id="dim-intensity">
+            <option value="light" selected>Light</option>
+            <option value="medium">Medium</option>
+            <option value="heavy">Heavy</option>
+          </select>
         </div>
 
         <div class="section-label">Appearance</div>
@@ -196,6 +218,14 @@
           </div>
         </div>
         <button class="btn-primary" id="run-wizard" style="margin-top: 16px">Run The Wizard</button>
+
+        <div class="section-label">Excluded Apps (Terminals)</div>
+        <p class="hint">These apps are fully excluded — vim-anywhere will not intercept any keys.</p>
+        <div id="excluded-apps-list"></div>
+        <div class="setting-row" style="margin-top: 8px">
+          <input type="text" class="input-field" id="add-excluded-app" placeholder="com.example.app (bundle ID)" />
+          <button class="btn-ghost" id="btn-add-excluded">+ Add</button>
+        </div>
       </div>
 
       <!-- About Tab -->
@@ -220,6 +250,7 @@
               <span><span class="status-dot inactive"></span> <span class="perm-text">checking...</span></span>
             </div>
             <button class="btn-ghost" id="open-privacy-settings" style="margin-top: 12px">Open Privacy Settings</button>
+            <button class="btn-ghost" id="reopen-onboarding" style="margin-top: 8px">Re-run Setup</button>
           </div>
         </div>
       </div>

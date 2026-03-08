@@ -14,8 +14,8 @@
 | 7 | /commit | done | test commit 65ebff9 |
 | 8 | /debug | skipped | user skipped |
 | 9 | /security-check | done | clean on attempt 2 (0 findings) |
-| 10 | /commit | not yet | conditional |
-| 11 | /review | >> next << | loop |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
+| 10 | /commit | done | nitpick fixes c600381 |
+| 11 | /review | done | clean on attempt 4 (0 issues) |
+| 12 | /commit | skipped | review was clean |
+| 13 | /finish-feature | >> next << | |
 | 14 | /release | not yet | optional |

@@ -9,13 +9,23 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
-
-### Changed
-
-### Fixed
-
-### Deprecated
-
-### Removed
+- Full Vim modal editing engine with Normal, Insert, Visual, and Operator-Pending modes
+- 50+ motions: h/j/k/l, w/W/b/B/e/E, f/F/t/T, 0/$/^, gg/G, {/}, and more
+- Operators: d (delete), c (change), y (yank), > (indent), < (outdent), ~ (toggle case)
+- Text objects: iw/aw, iW/aW, i"/a", i'/a', i`/a`, i(/a(, i[/a[, i{/a{, i</a<, is/as, ip/ap
+- Visual mode (characterwise and linewise) with full operator support
+- Named register system for yank/paste operations
+- Repeat count support (e.g., 3dw, 5j)
+- Dot-repeat for last change command
+- macOS global keyboard interception via CGEvent tap
+- macOS Accessibility API integration for reading/writing text in any application
+- App-specific detection to disable interception in terminal emulators
+- Tauri-based settings UI with dark theme
+- User configuration via ~/.config/vim-anywhere/config.toml
+- Comprehensive test suite: 192 tests across core library and engine
 
 ### Security
+- RAII wrapper (AXElement) for CoreFoundation objects preventing memory leaks
+- Restrictive Content Security Policy for Tauri webview
+- Proper CFString ownership handling (wrap_under_create_rule for +1 references)
+- Sensitive file patterns added to .gitignore

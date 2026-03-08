@@ -1,0 +1,14 @@
+[workspace]
+members = ["crates/core", "crates/platform-mac", "ui/src-tauri"]
+resolver = "2"
+
+[package]
+name = "vim-anywhere"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vim-anywhere-core = { path = "crates/core" }
+vim-anywhere-platform-mac = { path = "crates/platform-mac" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

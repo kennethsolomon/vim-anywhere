@@ -1,0 +1,11 @@
+[package]
+name = "vim-anywhere-platform-mac"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vim-anywhere-core = { path = "../core" }
+core-graphics = "0.24"
+core-foundation = "0.10"
+cocoa = "0.26"
+objc = "0.2"

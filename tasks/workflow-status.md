@@ -9,11 +9,11 @@
 | 2 | /frontend-design | done | Overlay redesign, focus highlight, onboarding flow, settings updates |
 | 3 | /write-plan | done | 7 phases, ~50 steps |
 | 4 | /execute-plan | done | All 7 phases complete, 197 tests passing |
-| 5 | /commit | >> next << | |
-| 6 | /write-tests | not yet | |
-| 7 | /commit | not yet | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | loop |
+| 5 | /commit | done | 6 split commits for implementation |
+| 6 | /write-tests | done | 26 new tests, 223 total passing |
+| 7 | /commit | done | test commit 65ebff9 |
+| 8 | /debug | skipped | user skipped |
+| 9 | /security-check | >> next << | loop |
 | 10 | /commit | not yet | conditional |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |

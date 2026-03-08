@@ -283,9 +283,16 @@ pub fn set_ax_selected_range(element: &AXElement, location: usize, length: usize
 }
 
 /// Get the frame (x, y, width, height) of the window containing the focused element.
-/// Traverses up via AXWindow attribute.
+/// Convenience wrapper that queries the focused element internally.
 pub fn get_focused_window_frame() -> Option<(f64, f64, f64, f64)> {
     let element = get_focused_element()?;
+    get_window_frame(&element)
+}
+
+/// Get the frame (x, y, width, height) of the window containing the given element.
+/// Traverses up via AXWindow attribute. Prefer this over `get_focused_window_frame()`
+/// when you already have the AXElement to avoid a redundant AX query.
+pub fn get_window_frame(element: &AXElement) -> Option<(f64, f64, f64, f64)> {
     unsafe {
         // Get the AXWindow from the focused element
         let attr = CFString::new("AXWindow");

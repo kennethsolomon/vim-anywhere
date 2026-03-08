@@ -59,14 +59,6 @@ impl Engine {
 
         let cmd = self.parser.parse(event, mode);
 
-        // Debug: log parsed command to file
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true).append(true)
-            .open("/tmp/vim-anywhere.log")
-        {
-            let _ = std::io::Write::write_fmt(&mut f, format_args!("  ENGINE: key={:?} mods={:?} cmd={:?} mode={:?}\n", event.key, event.modifiers, cmd, mode));
-        }
-
         match cmd {
             ParsedCommand::Incomplete => EngineResult::Suppressed,
             ParsedCommand::Invalid => EngineResult::Suppressed,

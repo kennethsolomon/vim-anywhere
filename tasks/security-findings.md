@@ -85,3 +85,81 @@ _None found._
 | Medium   | 3 |
 | Low      | 4 |
 | **Total** | **9** |
+
+---
+
+# Security Audit — 2026-03-09
+
+**Scope:** Changed files since `9c613a4` (seamless integration feature — 7 commits)
+**Stack:** Rust / Tauri 2 / HTML+JS
+**Files audited:** 18 source files (excluding docs/tasks)
+
+## Prior Findings Status
+
+- **HIGH CSP disabled** — FIXED (CSP now set in tauri.conf.json:23)
+- **HIGH AXElement memory** — FIXED (RAII wrapper with `Drop` impl at accessibility.rs:62-88)
+- **MEDIUM CFString ownership** — FIXED (`wrap_under_create_rule` at accessibility.rs:144)
+- **MEDIUM Config::load() silent fallback** — FIXED (eprintln warnings at config.rs:137-145)
+- **MEDIUM HOME env validation** — FIXED (`std::env::home_dir()` with fallback at config.rs:122-124)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+- **[ui/src/main.js:441-444]** `innerHTML` with interpolated `app` value in `renderExcludedApps()`
+  **Standard:** OWASP A03 — Injection / XSS (CWE-79)
+  **Risk:** The `app` value comes from `config.excluded_apps` (user's own config file, loaded via Tauri IPC). If a bundle ID contained HTML/JS (e.g. `<img onerror=...>`), it would execute in the webview. Practically low risk since the data source is the user's own config, but it violates defense-in-depth.
+  **Recommendation:** Use `textContent` or `document.createTextNode()` instead of string interpolation in `innerHTML`. Or sanitize with a simple escape function.
+
+- **[src/lib.rs:62-68]** Debug logging to `/tmp/vim-anywhere.log` writes every keystroke in Normal/Visual mode
+  **Standard:** CWE-532 — Insertion of Sensitive Information into Log File (OWASP A09)
+  **Risk:** The log records every key event with key value and modifiers. In a shared system, `/tmp/vim-anywhere.log` is world-readable. This could leak sensitive text content being edited.
+  **Recommendation:** Remove debug logging before production release, or gate behind a `DEBUG` env var, and use a user-private path (e.g. `~/.local/share/vim-anywhere/debug.log` with 0600 permissions).
+
+- **[ui/src-tauri/src/lib.rs:760,921,1032]** Same debug logging issue in Tauri event handler — writes AX role, editable status, and event details to `/tmp/vim-anywhere.log`
+  **Standard:** CWE-532 — Insertion of Sensitive Information into Log File (OWASP A09)
+  **Risk:** Same as above — keystroke and AX element data in world-readable temp file.
+  **Recommendation:** Same as above.
+
+## Low / Informational
+
+- **[ui/src/onboarding.js:21]** Empty `catch {}` block silently swallows permission check errors
+  **Standard:** CWE-392 — Missing Report of Error Condition
+  **Recommendation:** Log the error to console for debugging: `catch (e) { console.warn("Permission check failed:", e); }`
+
+- **[ui/src-tauri/src/lib.rs:305-311]** `set_excluded_app` accepts arbitrary string as bundle ID with no validation
+  **Standard:** CWE-20 — Improper Input Validation
+  **Risk:** Very low — the value is only stored in config and compared against app bundle IDs. No path traversal or injection possible. But extremely long strings or special characters could bloat the config file.
+  **Recommendation:** Consider basic validation: non-empty, max length, reverse-domain format check.
+
+- **[crates/platform-mac/src/accessibility.rs:287-349]** `get_focused_window_frame()` calls `get_focused_element()` internally, which duplicates the AX query already made in the event handler
+  **Standard:** Performance / CWE-400
+  **Recommendation:** Accept an `&AXElement` parameter instead of re-querying, to avoid redundant AX API calls on every mode transition.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — OS-level permissions (Accessibility/Input Monitoring) gate all functionality. Appropriate.
+- **A02 Cryptographic Failures** — No cryptography. No secrets. Config is plaintext preferences.
+- **A03 Injection (shell)** — `open_accessibility_settings` and `open_input_monitoring_settings` use hardcoded URLs with `std::process::Command::new("open")` — no user input in the URL. Safe.
+- **A04 Insecure Design** — Terminal exclusion list prevents interception in sensitive apps. Focus-change auto-reset prevents stale mode state.
+- **A05 Security Misconfiguration** — CSP is now properly set. New windows (dim-overlay, focus-border, onboarding) are created with appropriate properties (click-through, no focus).
+- **A08 Data Integrity** — `complete_onboarding`, `set_excluded_app`, `remove_excluded_app` all write through `Config::save()` with proper serialization. No untrusted deserialization.
+- **A10 SSRF** — No network requests in new code.
+- **Memory safety** — New `get_focused_window_frame()` properly wraps `window_ref` in `AXElement` (RAII), and explicitly `CFRelease`s AXValue pointers for position/size. No leaks.
+- **Onboarding flow** — Permission URLs are hardcoded (`x-apple.systempreferences:...`), not user-controlled. Safe.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 3 |
+| Low      | 3 |
+| **Total** | **6** |

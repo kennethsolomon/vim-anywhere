@@ -18,7 +18,7 @@ async function checkPermissions() {
     dotAx.classList.toggle("granted", axGranted);
     dotInput.classList.toggle("granted", inputGranted);
     btnContinue.disabled = !(axGranted && inputGranted);
-  } catch {}
+  } catch (e) { console.warn("Permission check failed:", e); }
 }
 
 // Poll every 2 seconds

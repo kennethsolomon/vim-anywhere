@@ -438,10 +438,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     for (const app of apps) {
       const row = document.createElement("div");
       row.className = "setting-row";
-      row.innerHTML = `
-        <span class="mono" style="font-size:12px">${app}</span>
-        <button class="btn-delete" data-bundle="${app}" title="Remove">x</button>
-      `;
+      const span = document.createElement("span");
+      span.className = "mono";
+      span.style.fontSize = "12px";
+      span.textContent = app;
+      const btn = document.createElement("button");
+      btn.className = "btn-delete";
+      btn.dataset.bundle = app;
+      btn.title = "Remove";
+      btn.textContent = "x";
+      row.appendChild(span);
+      row.appendChild(btn);
       excludedList.appendChild(row);
     }
     excludedList.querySelectorAll(".btn-delete").forEach((btn) => {

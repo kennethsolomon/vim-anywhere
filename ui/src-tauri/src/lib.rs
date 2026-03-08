@@ -1,5 +1,4 @@
 use std::sync::{Arc, Mutex};
-use std::io::Write;
 use tauri::{Emitter, Manager};
 use tauri::tray::TrayIconBuilder;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -303,6 +302,13 @@ fn complete_onboarding(state: tauri::State<'_, Arc<AppState>>, app_handle: tauri
 
 #[tauri::command]
 fn set_excluded_app(state: tauri::State<'_, Arc<AppState>>, bundle_id: String) -> bool {
+    // Basic validation: non-empty, max 255 chars, only printable ASCII (reverse-domain style)
+    if bundle_id.is_empty()
+        || bundle_id.len() > 255
+        || !bundle_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
+        return false;
+    }
     let mut cfg = state.config.lock().unwrap();
     if !cfg.excluded_apps.contains(&bundle_id) {
         cfg.excluded_apps.push(bundle_id);
@@ -754,14 +760,6 @@ pub fn run() {
                     eprintln!("[vim-anywhere] Accessibility not granted. Features limited.");
                 }
 
-                // Log event tap start
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true).append(true)
-                    .open("/tmp/vim-anywhere.log")
-                {
-                    let _ = writeln!(f, "=== Event tap thread starting ===");
-                    let _ = writeln!(f, "Accessibility trusted: {}", accessibility::is_accessibility_trusted());
-                }
 
                 let callback: event_tap::KeyEventCallback = Box::new(move |key_event: vim_anywhere_core::parser::KeyEvent| -> bool {
                     let notify_mode = |mode: Mode| {
@@ -915,13 +913,6 @@ pub fn run() {
                     // Check if the focused element is an editable text field.
                     // Non-editable elements (e.g. web page body, buttons) should pass through.
                     let is_editable = accessibility::is_editable_text(&element);
-                    let role = accessibility::get_ax_role(&element).unwrap_or_default();
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .create(true).append(true)
-                        .open("/tmp/vim-anywhere.log")
-                    {
-                        let _ = writeln!(f, "  AX: role={:?} editable={}", role, is_editable);
-                    }
                     if !is_editable {
                         return false;
                     }
@@ -1026,13 +1017,7 @@ pub fn run() {
                 });
 
                 if let Err(e) = event_tap::start_event_tap(callback) {
-                    eprintln!("[vim-anywhere] {}", e);
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .create(true).append(true)
-                        .open("/tmp/vim-anywhere.log")
-                    {
-                        let _ = writeln!(f, "EVENT TAP FAILED: {}", e);
-                    }
+                    eprintln!("[vim-anywhere] Event tap failed: {}", e);
                 }
             });
 

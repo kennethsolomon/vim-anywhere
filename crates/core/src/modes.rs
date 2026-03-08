@@ -396,6 +396,95 @@ mod tests {
     }
 
     #[test]
+    fn reset_to_insert_from_normal() {
+        let mut sm = make_sm();
+        assert_eq!(sm.mode(), Mode::Normal);
+        sm.reset_to_insert();
+        assert_eq!(sm.mode(), Mode::Insert);
+    }
+
+    #[test]
+    fn reset_to_insert_from_visual() {
+        let mut sm = make_sm();
+        sm.enter_visual_characterwise();
+        assert_eq!(sm.mode(), Mode::VisualCharacterwise);
+        sm.reset_to_insert();
+        assert_eq!(sm.mode(), Mode::Insert);
+    }
+
+    #[test]
+    fn reset_to_insert_clears_pending_sequence() {
+        let mut sm = make_sm_with_sequence(['j', 'k']);
+        sm.enter_insert(InsertVariant::I);
+        sm.handle_insert_char('j'); // set pending
+        assert!(sm.pending_sequence_char().is_some());
+        sm.reset_to_insert();
+        assert!(sm.pending_sequence_char().is_none());
+        assert_eq!(sm.mode(), Mode::Insert);
+    }
+
+    #[test]
+    fn smart_escape_disabled_normal_returns_none() {
+        let mut sm = ModeStateMachine::new(ModeEntryConfig {
+            smart_escape: false,
+            double_escape_sends_real: false,
+            ..Default::default()
+        });
+        sm.set_mode(Mode::Normal);
+        let t = sm.handle_escape();
+        assert_eq!(t, ModeTransition::None);
+    }
+
+    #[test]
+    fn control_bracket_disabled_returns_none() {
+        let mut sm = ModeStateMachine::new(ModeEntryConfig {
+            control_bracket: false,
+            ..Default::default()
+        });
+        sm.set_mode(Mode::Normal);
+        sm.enter_insert(InsertVariant::I);
+        let t = sm.handle_control_bracket();
+        assert_eq!(t, ModeTransition::None);
+        assert_eq!(sm.mode(), Mode::Insert);
+    }
+
+    #[test]
+    fn custom_sequence_ignored_in_normal_mode() {
+        let mut sm = make_sm_with_sequence(['j', 'k']);
+        // In Normal mode, handle_insert_char should return None
+        let t = sm.handle_insert_char('j');
+        assert_eq!(t, ModeTransition::None);
+        assert_eq!(sm.mode(), Mode::Normal);
+    }
+
+    #[test]
+    fn insert_from_insert_is_noop() {
+        let sm_new = ModeStateMachine::new(ModeEntryConfig::default());
+        assert_eq!(sm_new.mode(), Mode::Insert);
+        // Can't call enter_insert from Insert (only works from Normal)
+    }
+
+    #[test]
+    fn visual_from_insert_is_noop() {
+        let mut sm = ModeStateMachine::new(ModeEntryConfig::default());
+        let t = sm.enter_visual_characterwise();
+        assert_eq!(t, ModeTransition::None);
+        assert_eq!(sm.mode(), Mode::Insert);
+    }
+
+    #[test]
+    fn double_escape_in_insert_mode() {
+        let mut sm = ModeStateMachine::new(ModeEntryConfig {
+            double_escape_sends_real: true,
+            ..Default::default()
+        });
+        // First escape — transitions to Normal (records time, then transitions)
+        let t1 = sm.handle_escape();
+        assert_eq!(t1, ModeTransition::To(Mode::Normal));
+        assert_eq!(sm.mode(), Mode::Normal);
+    }
+
+    #[test]
     fn all_insert_variants() {
         for variant in [
             InsertVariant::I,

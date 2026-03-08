@@ -189,4 +189,68 @@ mod tests {
         assert_eq!(config.theme, "light");
         assert_eq!(config.overlay_size, "medium"); // default
     }
+
+    #[test]
+    fn default_config_new_fields() {
+        let config = Config::default();
+        assert!(config.focus_highlight);
+        assert!(config.dim_background);
+        assert_eq!(config.dim_intensity, "light");
+        assert!(!config.onboarding_complete);
+        assert!(!config.excluded_apps.is_empty());
+        assert!(config.excluded_apps.contains(&"com.apple.Terminal".to_string()));
+        assert!(config.excluded_apps.contains(&"net.kovidgoyal.kitty".to_string()));
+    }
+
+    #[test]
+    fn default_mode_entry_smart_escape() {
+        let me = ModeEntryConfigJson::default();
+        assert_eq!(me.method, "escape");
+        assert!(me.smart_escape);
+        assert!(!me.double_escape_sends_real);
+        assert!(me.custom_sequence.is_none());
+    }
+
+    #[test]
+    fn deserialize_with_excluded_apps() {
+        let json = r#"{"excluded_apps": ["com.example.app"]}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.excluded_apps, vec!["com.example.app"]);
+    }
+
+    #[test]
+    fn deserialize_with_onboarding() {
+        let json = r#"{"onboarding_complete": true}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.onboarding_complete);
+    }
+
+    #[test]
+    fn deserialize_with_dim_settings() {
+        let json = r#"{"dim_background": false, "dim_intensity": "heavy"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(!config.dim_background);
+        assert_eq!(config.dim_intensity, "heavy");
+    }
+
+    #[test]
+    fn roundtrip_new_fields() {
+        let mut config = Config::default();
+        config.onboarding_complete = true;
+        config.dim_background = false;
+        config.dim_intensity = "medium".to_string();
+        config.excluded_apps = vec!["test.app".to_string()];
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert!(parsed.onboarding_complete);
+        assert!(!parsed.dim_background);
+        assert_eq!(parsed.dim_intensity, "medium");
+        assert_eq!(parsed.excluded_apps, vec!["test.app"]);
+    }
+
+    #[test]
+    fn default_excluded_apps_count() {
+        let config = Config::default();
+        assert_eq!(config.excluded_apps.len(), 8);
+    }
 }

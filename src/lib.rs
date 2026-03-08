@@ -55,7 +55,7 @@ impl Engine {
             .create(true).append(true)
             .open("/tmp/vim-anywhere.log")
         {
-            let _ = std::io::Write::write_fmt(&mut f, format_args!("  ENGINE: cmd={:?} mode={:?}\n", cmd, mode));
+            let _ = std::io::Write::write_fmt(&mut f, format_args!("  ENGINE: key={:?} mods={:?} cmd={:?} mode={:?}\n", event.key, event.modifiers, cmd, mode));
         }
 
         match cmd {

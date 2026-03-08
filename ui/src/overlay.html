@@ -2,52 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body {
-        background: transparent;
-        overflow: hidden;
-        -webkit-user-select: none;
-        user-select: none;
-      }
-      .mode-pill {
-        font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        padding: 4px 10px;
-        border-radius: 4px;
-        color: #fff;
-        text-align: center;
-        opacity: 0.85;
-        transition: background-color 0.15s ease, opacity 0.15s ease;
-      }
-      .mode-pill.normal { background: #1a1a2e; border: 1px solid #4a4a6a; }
-      .mode-pill.insert { background: #1b4332; border: 1px solid #2d6a4f; }
-      .mode-pill.visual { background: #3d1f00; border: 1px solid #8a5a00; }
-    </style>
-    <script>
-      const { listen } = window.__TAURI__.event;
-      window.addEventListener("DOMContentLoaded", async () => {
-        const pill = document.getElementById("mode");
-
-        function setMode(mode) {
-          pill.textContent = mode;
-          pill.className = "mode-pill";
-          if (mode === "NORMAL") pill.classList.add("normal");
-          else if (mode === "INSERT") pill.classList.add("insert");
-          else if (mode === "VISUAL" || mode === "V-LINE") pill.classList.add("visual");
-        }
-
-        setMode("NORMAL");
-
-        await listen("mode-changed", (event) => {
-          setMode(event.payload.mode);
-        });
-      });
-    </script>
+    <link rel="stylesheet" href="overlay.css" />
+    <script type="module" src="/overlay.js" defer></script>
   </head>
   <body>
-    <div class="mode-pill normal" id="mode">NORMAL</div>
+    <div class="mode-indicator normal" id="mode">NORMAL</div>
   </body>
 </html>

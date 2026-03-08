@@ -11,8 +11,12 @@ pub struct Config {
     pub theme: String,
     #[serde(default = "default_overlay_size")]
     pub overlay_size: String,
+    #[serde(default = "default_overlay_position")]
+    pub overlay_position: String,
     #[serde(default = "default_true")]
     pub focus_highlight: bool,
+    #[serde(default = "default_true")]
+    pub show_overlay: bool,
     #[serde(default = "default_true")]
     pub menu_bar_icon: bool,
     #[serde(default)]
@@ -52,6 +56,7 @@ pub struct AppConfig {
 
 fn default_theme() -> String { "dark".to_string() }
 fn default_overlay_size() -> String { "medium".to_string() }
+fn default_overlay_position() -> String { "bottom-right".to_string() }
 fn default_true() -> bool { true }
 fn default_mode_entry() -> String { "escape".to_string() }
 fn default_strategy() -> String { "accessibility".to_string() }
@@ -72,7 +77,9 @@ impl Default for Config {
             mode_entry: ModeEntryConfigJson::default(),
             theme: default_theme(),
             overlay_size: default_overlay_size(),
+            overlay_position: default_overlay_position(),
             focus_highlight: true,
+            show_overlay: true,
             menu_bar_icon: true,
             launch_at_login: false,
             custom_mappings: vec![],

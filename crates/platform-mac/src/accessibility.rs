@@ -17,6 +17,11 @@ extern "C" {
         attribute: *const c_void,
         value: *const c_void,
     ) -> i32;
+    fn AXUIElementIsAttributeSettable(
+        element: *mut c_void,
+        attribute: *const c_void,
+        settable: *mut bool,
+    ) -> i32;
     fn AXIsProcessTrusted() -> bool;
 }
 
@@ -162,6 +167,21 @@ impl AxSupport {
 
     pub fn is_text_element(&self) -> bool {
         self.role == "AXTextArea" || self.role == "AXTextField"
+    }
+}
+
+/// Check if the focused element is an editable text field.
+/// Uses AXUIElementIsAttributeSettable to determine if AXValue can be written.
+pub fn is_editable_text(element: &AXElement) -> bool {
+    unsafe {
+        let attr = CFString::new("AXValue");
+        let mut settable = false;
+        let result = AXUIElementIsAttributeSettable(
+            element.as_ptr(),
+            attr.as_concrete_TypeRef() as _,
+            &mut settable,
+        );
+        result == K_AX_ERROR_SUCCESS && settable
     }
 }
 

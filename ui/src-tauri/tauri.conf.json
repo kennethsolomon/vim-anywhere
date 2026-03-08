@@ -8,6 +8,7 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "vim-anywhere",
@@ -16,23 +17,6 @@
         "height": 480,
         "resizable": true,
         "center": true
-      },
-      {
-        "title": "",
-        "label": "overlay",
-        "url": "overlay.html",
-        "width": 90,
-        "height": 28,
-        "x": 20,
-        "y": 40,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "shadow": false,
-        "focus": false,
-        "visible": true
       }
     ],
     "security": {

@@ -83,28 +83,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (doubleEscCheck)
     doubleEscCheck.addEventListener("change", saveModeEntry);
 
-  // ── Overlay Size ────────────────────────────────────────────────────────
-  const overlaySize = document.getElementById("overlay-size");
-  if (overlaySize && config.overlay_size) {
-    overlaySize.value = config.overlay_size;
-  }
-  if (overlaySize) {
-    overlaySize.addEventListener("change", async (e) => {
-      await invoke("set_overlay_size", { size: e.target.value });
-    });
-  }
-
-  // ── Focus Highlight ─────────────────────────────────────────────────────
-  const focusHighlight = document.getElementById("focus-highlight");
-  if (focusHighlight && config.focus_highlight !== undefined) {
-    focusHighlight.checked = config.focus_highlight;
-  }
-  if (focusHighlight) {
-    focusHighlight.addEventListener("change", async (e) => {
-      await invoke("set_focus_highlight", { enabled: e.target.checked });
-    });
-  }
-
   // ── Theme ───────────────────────────────────────────────────────────────
   const themeSelect = document.getElementById("theme-select");
   if (themeSelect && config.theme) {
@@ -152,6 +130,39 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (menuBarIcon) {
     menuBarIcon.addEventListener("change", async (e) => {
       await invoke("set_menu_bar_icon", { enabled: e.target.checked });
+    });
+  }
+
+  // ── Show Overlay ───────────────────────────────────────────────────────
+  const showOverlay = document.getElementById("show-overlay");
+  if (showOverlay && config.show_overlay !== undefined) {
+    showOverlay.checked = config.show_overlay;
+  }
+  if (showOverlay) {
+    showOverlay.addEventListener("change", async (e) => {
+      await invoke("set_show_overlay", { enabled: e.target.checked });
+    });
+  }
+
+  // ── Overlay Size ─────────────────────────────────────────────────────
+  const overlaySizeSelect = document.getElementById("overlay-size-select");
+  if (overlaySizeSelect && config.overlay_size) {
+    overlaySizeSelect.value = config.overlay_size;
+  }
+  if (overlaySizeSelect) {
+    overlaySizeSelect.addEventListener("change", async (e) => {
+      await invoke("set_overlay_size", { size: e.target.value });
+    });
+  }
+
+  // ── Overlay Position ───────────────────────────────────────────────
+  const overlayPosSelect = document.getElementById("overlay-position-select");
+  if (overlayPosSelect && config.overlay_position) {
+    overlayPosSelect.value = config.overlay_position;
+  }
+  if (overlayPosSelect) {
+    overlayPosSelect.addEventListener("change", async (e) => {
+      await invoke("set_overlay_position", { position: e.target.value });
     });
   }
 

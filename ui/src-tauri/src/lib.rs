@@ -56,6 +56,31 @@ fn mode_to_string(mode: Mode) -> String {
     }
 }
 
+// ── Overlay position helper ──────────────────────────────────────────────────
+
+fn overlay_xy(
+    position: &str,
+    screen_w: f64, screen_h: f64,
+    ow: f64, oh: f64,
+    margin: f64, dock_offset: f64,
+) -> (f64, f64) {
+    match position {
+        "top-left" => (margin, margin + 30.0), // 30 for menu bar
+        "top-right" => (screen_w - ow - margin, margin + 30.0),
+        "bottom-left" => (margin, screen_h - oh - margin - dock_offset),
+        "top-center" => ((screen_w - ow) / 2.0, margin + 30.0),
+        "bottom-center" => ((screen_w - ow) / 2.0, screen_h - oh - margin - dock_offset),
+        _ => (screen_w - ow - margin, screen_h - oh - margin - dock_offset), // bottom-right default
+    }
+}
+
+// ── Tray icon ────────────────────────────────────────────────────────────────
+
+fn app_tray_icon() -> tauri::image::Image<'static> {
+    tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+        .expect("Failed to load tray icon")
+}
+
 // ── Tauri commands ──────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -117,6 +142,31 @@ fn set_overlay_size(state: tauri::State<'_, Arc<AppState>>, size: String) -> boo
     let mut cfg = state.config.lock().unwrap();
     cfg.overlay_size = size;
     cfg.save().is_ok()
+}
+
+#[tauri::command]
+fn set_overlay_position(state: tauri::State<'_, Arc<AppState>>, app_handle: tauri::AppHandle, position: String) -> bool {
+    let mut cfg = state.config.lock().unwrap();
+    cfg.overlay_position = position.clone();
+    let save_ok = cfg.save().is_ok();
+    drop(cfg);
+
+    if let Some(overlay) = app_handle.get_webview_window("overlay") {
+        if let Ok(Some(monitor)) = app_handle.primary_monitor() {
+            let size = monitor.size();
+            let scale = monitor.scale_factor();
+            let screen_w = size.width as f64 / scale;
+            let screen_h = size.height as f64 / scale;
+            let ow = 100.0_f64;
+            let oh = 32.0_f64;
+            let margin = 20.0_f64;
+            let dock_offset = 40.0_f64;
+
+            let (x, y) = overlay_xy(&position, screen_w, screen_h, ow, oh, margin, dock_offset);
+            let _ = overlay.set_position(tauri::LogicalPosition::new(x, y));
+        }
+    }
+    save_ok
 }
 
 #[tauri::command]
@@ -182,6 +232,23 @@ fn set_app_strategy(state: tauri::State<'_, Arc<AppState>>, bundle_id: String, s
     });
     app_config.strategy = strategy;
     cfg.save().is_ok()
+}
+
+#[tauri::command]
+fn set_show_overlay(state: tauri::State<'_, Arc<AppState>>, app_handle: tauri::AppHandle, enabled: bool) -> bool {
+    let mut cfg = state.config.lock().unwrap();
+    cfg.show_overlay = enabled;
+    let save_ok = cfg.save().is_ok();
+    drop(cfg);
+
+    if let Some(overlay) = app_handle.get_webview_window("overlay") {
+        if enabled {
+            let _ = overlay.show();
+        } else {
+            let _ = overlay.hide();
+        }
+    }
+    save_ok
 }
 
 #[tauri::command]
@@ -362,7 +429,9 @@ pub fn run() {
             set_mode_entry,
             set_theme,
             set_overlay_size,
+            set_overlay_position,
             set_focus_highlight,
+            set_show_overlay,
             set_menu_bar_icon,
             set_launch_at_login,
             add_custom_mapping,
@@ -386,9 +455,9 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
-            let _tray = TrayIconBuilder::new()
-                .tooltip("vim-anywhere")
-                .icon(app.default_window_icon().cloned().unwrap())
+            let tray = TrayIconBuilder::with_id("tray")
+                .tooltip("vim-anywhere — NORMAL")
+                .icon(app_tray_icon())
                 .menu(&tray_menu)
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
@@ -406,23 +475,6 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // ── Make overlay click-through + visible on all Spaces ───
-            if let Some(overlay_win) = app.get_webview_window("overlay") {
-                #[cfg(target_os = "macos")]
-                #[allow(deprecated, unexpected_cfgs)]
-                {
-                    use objc::{msg_send, sel, sel_impl};
-                    let ns_window = overlay_win.ns_window().unwrap() as cocoa::base::id;
-                    unsafe {
-                        let _: () = msg_send![ns_window, setIgnoresMouseEvents: true];
-                        let _: () = msg_send![ns_window, setLevel: 25i64]; // NSStatusWindowLevel
-                        // Show on all Spaces/desktops (canJoinAllSpaces = 1 << 0)
-                        let behavior: u64 = msg_send![ns_window, collectionBehavior];
-                        let _: () = msg_send![ns_window, setCollectionBehavior: behavior | (1u64 << 0)];
-                    }
-                }
-            }
-
             // ── Hide window on close instead of quitting ────────────────
             let main_window = app.get_webview_window("main").unwrap();
             main_window.on_window_event(move |event| {
@@ -435,9 +487,67 @@ pub fn run() {
                 }
             });
 
+            // ── Overlay window ─────────────────────────────────────────
+            {
+                let cfg = state.config.lock().unwrap();
+                let show_overlay = cfg.show_overlay;
+                let overlay_pos = cfg.overlay_position.clone();
+                drop(cfg);
+
+                let overlay_w = 100.0_f64;
+                let overlay_h = 32.0_f64;
+                let margin = 20.0_f64;
+                let dock_offset = 40.0_f64;
+
+                let mut builder = tauri::WebviewWindowBuilder::new(
+                    app,
+                    "overlay",
+                    tauri::WebviewUrl::App("overlay.html".into()),
+                )
+                .title("")
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .resizable(false)
+                .focused(false)
+                .skip_taskbar(true)
+                .visible(show_overlay)
+                .inner_size(overlay_w, overlay_h);
+
+                // Position based on config
+                if let Ok(Some(monitor)) = app.primary_monitor() {
+                    let size = monitor.size();
+                    let scale = monitor.scale_factor();
+                    let screen_w = size.width as f64 / scale;
+                    let screen_h = size.height as f64 / scale;
+                    let (x, y) = overlay_xy(&overlay_pos, screen_w, screen_h, overlay_w, overlay_h, margin, dock_offset);
+                    builder = builder.position(x, y);
+                }
+
+                if let Ok(overlay) = builder.build() {
+                    let _ = overlay.set_ignore_cursor_events(true);
+                    // Make visible on all Spaces (macOS)
+                    #[cfg(target_os = "macos")]
+                    {
+                        use cocoa::base::id;
+                        use objc::{msg_send, sel, sel_impl};
+                        if let Ok(ns_win) = overlay.ns_window() {
+                            unsafe {
+                                let ns_window = ns_win as id;
+                                // NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
+                                // NSWindowCollectionBehaviorStationary = 1 << 4
+                                let behavior: u64 = (1 << 0) | (1 << 4);
+                                let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Event tap ───────────────────────────────────────────────
             let app_handle2 = app.handle().clone();
             let state_for_tap = state.clone();
+            let tray_for_tap = tray.clone();
 
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(500));
@@ -456,6 +566,13 @@ pub fn run() {
                 }
 
                 let callback: event_tap::KeyEventCallback = Box::new(move |key_event: vim_anywhere_core::parser::KeyEvent| -> bool {
+                    let notify_mode = |mode: Mode| {
+                        let _ = app_handle2.emit("mode-changed", ModeChangedPayload {
+                            mode: mode_to_string(mode),
+                        });
+                        let _ = tray_for_tap.set_tooltip(Some(&format!("vim-anywhere — {}", mode_to_string(mode))));
+                    };
+
                     // Always pass through Cmd shortcuts
                     if key_event.modifiers.contains(&vim_anywhere_core::parser::Modifier::Command) {
                         return false;
@@ -524,9 +641,7 @@ pub fn run() {
                         return match result {
                             EngineResult::ModeChanged(new_mode) => {
                                 // Mode exit (Escape or custom sequence) — suppress and sync
-                                let _ = app_handle2.emit("mode-changed", ModeChangedPayload {
-                                    mode: mode_to_string(new_mode),
-                                });
+                                notify_mode(new_mode);
                                 // Set block cursor when entering normal mode
                                 if new_mode == Mode::Normal {
                                     if let Some(el) = accessibility::get_focused_element() {
@@ -554,27 +669,41 @@ pub fn run() {
                             if key_event.key == Key::Escape {
                                 let mut dummy = InMemoryBuffer::new("");
                                 let _ = eng.handle_key(&key_event, &mut dummy);
-                                let _ = app_handle2.emit("mode-changed", ModeChangedPayload {
-                                    mode: mode_to_string(eng.mode()),
-                                });
+                                notify_mode(eng.mode());
                                 return true;
                             }
                             return false;
                         }
                     };
 
+                    // Check if the focused element is an editable text field.
+                    // Non-editable elements (e.g. web page body, buttons) should pass through.
+                    let is_editable = accessibility::is_editable_text(&element);
+                    let role = accessibility::get_ax_role(&element).unwrap_or_default();
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true).append(true)
+                        .open("/tmp/vim-anywhere.log")
+                    {
+                        let _ = writeln!(f, "  AX: role={:?} editable={}", role, is_editable);
+                    }
+                    if !is_editable {
+                        if key_event.key == Key::Escape {
+                            let mut dummy = InMemoryBuffer::new("");
+                            let _ = eng.handle_key(&key_event, &mut dummy);
+                            notify_mode(eng.mode());
+                            return true;
+                        }
+                        return false;
+                    }
+
                     // Read text and cursor from AX — if either fails, pass through
-                    // (this implicitly checks the element is a text field we can work with)
                     let text = match accessibility::get_ax_value(&element) {
                         Some(t) => t,
                         None => {
-                            // Not a text element — only handle Escape for mode management
                             if key_event.key == Key::Escape {
                                 let mut dummy = InMemoryBuffer::new("");
                                 let _ = eng.handle_key(&key_event, &mut dummy);
-                                let _ = app_handle2.emit("mode-changed", ModeChangedPayload {
-                                    mode: mode_to_string(eng.mode()),
-                                });
+                                notify_mode(eng.mode());
                                 return true;
                             }
                             return false;
@@ -617,9 +746,7 @@ pub fn run() {
                         EngineResult::Suppressed => true,
                         EngineResult::SendRealEscape => false,
                         EngineResult::ModeChanged(new_mode) => {
-                            let _ = app_handle2.emit("mode-changed", ModeChangedPayload {
-                                mode: mode_to_string(new_mode),
-                            });
+                            notify_mode(new_mode);
                             apply_buffer_to_ax(&element, &buffer, &text, new_mode);
                             true
                         }
@@ -627,9 +754,7 @@ pub fn run() {
                             let new_mode = eng.mode();
                             apply_buffer_to_ax(&element, &buffer, &text, new_mode);
                             if new_mode != current_mode {
-                                let _ = app_handle2.emit("mode-changed", ModeChangedPayload {
-                                    mode: mode_to_string(new_mode),
-                                });
+                                notify_mode(new_mode);
                             }
                             true
                         }

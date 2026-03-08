@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="onboarding.css" />
+    <script type="module" src="/onboarding.js" defer></script>
+  </head>
+  <body>
+    <div class="onboarding">
+      <h1>vim-anywhere</h1>
+      <p class="subtitle">Vim keybindings for every text field on macOS</p>
+
+      <div class="steps">
+        <div class="step" id="step-accessibility">
+          <div class="step-header">
+            <span class="step-dot" id="dot-accessibility"></span>
+            <span class="step-title">Accessibility</span>
+          </div>
+          <p class="step-desc">Required to read and modify text in any application.</p>
+          <button class="btn" id="btn-accessibility">Open System Settings</button>
+        </div>
+
+        <div class="step" id="step-input">
+          <div class="step-header">
+            <span class="step-dot" id="dot-input"></span>
+            <span class="step-title">Input Monitoring</span>
+          </div>
+          <p class="step-desc">Required to intercept keyboard events globally.</p>
+          <button class="btn" id="btn-input">Open System Settings</button>
+        </div>
+      </div>
+
+      <div class="how-it-works">
+        <h2>How It Works</h2>
+        <ul>
+          <li>Press <kbd>Esc</kbd> to enter Normal mode in any text field</li>
+          <li>Use Vim motions: <kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd>, <kbd>w</kbd>, <kbd>b</kbd>, <kbd>ciw</kbd>, etc.</li>
+          <li>Press <kbd>i</kbd> to go back to typing</li>
+          <li>Terminals and non-text elements are automatically excluded</li>
+        </ul>
+      </div>
+
+      <button class="btn btn-primary" id="btn-continue" disabled>Verify & Continue</button>
+    </div>
+  </body>
+</html>

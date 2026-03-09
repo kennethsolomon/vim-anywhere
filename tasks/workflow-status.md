@@ -14,8 +14,8 @@
 | 7 | /commit | done | test(ux): hotkey matching, mapping helpers, config fields |
 | 8 | /debug | skipped | user proceeded to /security-check |
 | 9 | /security-check | done | clean on attempt 2 — 0 issues after fixes |
-| 10 | /commit | >> next << | conditional |
-| 11 | /review | not yet | loop |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
+| 10 | /commit | done | fix(security): mutex hardening, hotkey validation, dead code removal |
+| 11 | /review | done | clean on attempt 2 — 0 issues |
+| 12 | /commit | skipped | review was clean |
+| 13 | /finish-feature | >> next << | |
 | 14 | /release | not yet | optional |

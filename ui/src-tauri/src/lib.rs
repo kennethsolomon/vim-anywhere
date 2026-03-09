@@ -638,6 +638,249 @@ fn parse_mapping_key(to: &str) -> Option<Key> {
     }
 }
 
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vim_anywhere_core::parser::{Key, KeyEvent, Modifier};
+
+    fn key_event(key: Key, mods: &[Modifier]) -> KeyEvent {
+        KeyEvent {
+            key,
+            modifiers: mods.to_vec(),
+            is_repeat: false,
+        }
+    }
+
+    // -- matches_hotkey -------------------------------------------------------
+
+    #[test]
+    fn hotkey_ctrl_cmd_v_matches() {
+        let ev = key_event(Key::Char('v'), &[Modifier::Control, Modifier::Command]);
+        assert!(matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_ctrl_cmd_v_rejects_without_cmd() {
+        let ev = key_event(Key::Char('v'), &[Modifier::Control]);
+        assert!(!matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_ctrl_cmd_v_rejects_wrong_key() {
+        let ev = key_event(Key::Char('x'), &[Modifier::Control, Modifier::Command]);
+        assert!(!matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_extra_modifier_rejects() {
+        let ev = key_event(Key::Char('v'), &[Modifier::Control, Modifier::Command, Modifier::Shift]);
+        assert!(!matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_shift_escape() {
+        let ev = key_event(Key::Escape, &[Modifier::Shift]);
+        assert!(matches_hotkey(&ev, "shift-escape"));
+    }
+
+    #[test]
+    fn hotkey_option_alias() {
+        let ev = key_event(Key::Char('a'), &[Modifier::Option]);
+        assert!(matches_hotkey(&ev, "opt-a"));
+        assert!(matches_hotkey(&ev, "option-a"));
+    }
+
+    #[test]
+    fn hotkey_return_key() {
+        let ev = key_event(Key::Return, &[Modifier::Control]);
+        assert!(matches_hotkey(&ev, "ctrl-return"));
+    }
+
+    #[test]
+    fn hotkey_tab_key() {
+        let ev = key_event(Key::Tab, &[]);
+        assert!(matches_hotkey(&ev, "tab"));
+    }
+
+    #[test]
+    fn hotkey_backspace_key() {
+        let ev = key_event(Key::Backspace, &[Modifier::Command]);
+        assert!(matches_hotkey(&ev, "cmd-backspace"));
+    }
+
+    #[test]
+    fn hotkey_empty_string_rejects() {
+        let ev = key_event(Key::Char('a'), &[]);
+        assert!(!matches_hotkey(&ev, ""));
+    }
+
+    #[test]
+    fn hotkey_bare_char_no_modifiers() {
+        let ev = key_event(Key::Char('z'), &[]);
+        assert!(matches_hotkey(&ev, "z"));
+    }
+
+    #[test]
+    fn hotkey_bare_char_rejects_with_modifier() {
+        let ev = key_event(Key::Char('z'), &[Modifier::Control]);
+        assert!(!matches_hotkey(&ev, "z"));
+    }
+
+    // -- key_matches_mapping_from ---------------------------------------------
+
+    #[test]
+    fn mapping_from_single_char_matches() {
+        let ev = key_event(Key::Char('H'), &[]);
+        assert!(key_matches_mapping_from(&ev, "H"));
+    }
+
+    #[test]
+    fn mapping_from_single_char_case_sensitive() {
+        let ev = key_event(Key::Char('h'), &[]);
+        assert!(!key_matches_mapping_from(&ev, "H"));
+    }
+
+    #[test]
+    fn mapping_from_rejects_with_unexpected_modifier() {
+        let ev = key_event(Key::Char('h'), &[Modifier::Control]);
+        assert!(!key_matches_mapping_from(&ev, "h"));
+    }
+
+    #[test]
+    fn mapping_from_ctrl_b_matches() {
+        let ev = key_event(Key::Char('b'), &[Modifier::Control]);
+        assert!(key_matches_mapping_from(&ev, "ctrl-b"));
+    }
+
+    #[test]
+    fn mapping_from_escape_matches() {
+        let ev = key_event(Key::Escape, &[]);
+        assert!(key_matches_mapping_from(&ev, "escape"));
+    }
+
+    #[test]
+    fn mapping_from_return_matches() {
+        let ev = key_event(Key::Return, &[]);
+        assert!(key_matches_mapping_from(&ev, "return"));
+    }
+
+    #[test]
+    fn mapping_from_tab_matches() {
+        let ev = key_event(Key::Tab, &[]);
+        assert!(key_matches_mapping_from(&ev, "tab"));
+    }
+
+    // -- parse_mapping_key ----------------------------------------------------
+
+    #[test]
+    fn parse_single_char() {
+        assert_eq!(parse_mapping_key("a"), Some(Key::Char('a')));
+        assert_eq!(parse_mapping_key("Z"), Some(Key::Char('Z')));
+    }
+
+    #[test]
+    fn parse_special_keys() {
+        assert_eq!(parse_mapping_key("escape"), Some(Key::Escape));
+        assert_eq!(parse_mapping_key("return"), Some(Key::Return));
+        assert_eq!(parse_mapping_key("tab"), Some(Key::Tab));
+        assert_eq!(parse_mapping_key("backspace"), Some(Key::Backspace));
+    }
+
+    #[test]
+    fn parse_vim_special_chars() {
+        assert_eq!(parse_mapping_key("^"), Some(Key::Char('^')));
+        assert_eq!(parse_mapping_key("$"), Some(Key::Char('$')));
+        assert_eq!(parse_mapping_key("0"), Some(Key::Char('0')));
+    }
+
+    #[test]
+    fn parse_invalid_returns_none() {
+        assert_eq!(parse_mapping_key(""), None);
+        assert_eq!(parse_mapping_key("ctrl-a"), None); // multi-char, not a special name
+        assert_eq!(parse_mapping_key("abc"), None);
+    }
+
+    // -- mode_to_string -------------------------------------------------------
+
+    #[test]
+    fn mode_to_string_variants() {
+        assert_eq!(mode_to_string(Mode::Normal), "NORMAL");
+        assert_eq!(mode_to_string(Mode::Insert), "INSERT");
+        assert_eq!(mode_to_string(Mode::VisualCharacterwise), "VISUAL");
+        assert_eq!(mode_to_string(Mode::VisualLinewise), "V-LINE");
+    }
+
+    // -- overlay_xy -----------------------------------------------------------
+
+    #[test]
+    fn overlay_bottom_right_default() {
+        let (x, y) = overlay_xy("bottom-right", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!(x, 1800.0); // 1920 - 100 - 20
+        assert_eq!(y, 950.0);  // 1080 - 50 - 20 - 60
+    }
+
+    #[test]
+    fn overlay_top_left() {
+        let (x, y) = overlay_xy("top-left", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!(x, 20.0);
+        assert_eq!(y, 50.0); // 20 + 30 (menu bar)
+    }
+
+    #[test]
+    fn overlay_top_center() {
+        let (x, y) = overlay_xy("top-center", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!(x, 910.0); // (1920 - 100) / 2
+        assert_eq!(y, 50.0);
+    }
+
+    #[test]
+    fn overlay_unknown_falls_through_to_bottom_right() {
+        let (x1, y1) = overlay_xy("nonsense", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        let (x2, y2) = overlay_xy("bottom-right", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!((x1, y1), (x2, y2));
+    }
+
+    // -- config_to_mode_entry -------------------------------------------------
+
+    #[test]
+    fn config_to_mode_entry_defaults() {
+        let config = Config::default();
+        let me = config_to_mode_entry(&config);
+        assert!(!me.control_bracket);
+        assert!(me.custom_sequence.is_none());
+        assert!(me.smart_escape);
+        assert!(!me.double_escape_sends_real);
+    }
+
+    #[test]
+    fn config_to_mode_entry_control_bracket() {
+        let mut config = Config::default();
+        config.mode_entry.method = "control-bracket".to_string();
+        let me = config_to_mode_entry(&config);
+        assert!(me.control_bracket);
+    }
+
+    #[test]
+    fn config_to_mode_entry_custom_sequence() {
+        let mut config = Config::default();
+        config.mode_entry.method = "custom".to_string();
+        config.mode_entry.custom_sequence = Some("jk".to_string());
+        let me = config_to_mode_entry(&config);
+        assert_eq!(me.custom_sequence, Some(['j', 'k']));
+    }
+
+    #[test]
+    fn config_to_mode_entry_custom_sequence_too_short() {
+        let mut config = Config::default();
+        config.mode_entry.method = "custom".to_string();
+        config.mode_entry.custom_sequence = Some("j".to_string());
+        let me = config_to_mode_entry(&config);
+        assert!(me.custom_sequence.is_none()); // too short, falls back to None
+    }
+}
+
 // ── App entry point ─────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

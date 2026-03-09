@@ -118,3 +118,15 @@ Files touched:
   - ui/src/index.html
   - ui/src/styles.css
   - ui/src/main.js
+
+## Session: 2026-03-09 (/write-tests)
+- Added 32 new tests to `ui/src-tauri/src/lib.rs` (#[cfg(test)] module):
+  - matches_hotkey: 12 tests (ctrl-cmd-v match/reject, modifier combos, special keys, empty string, bare char)
+  - key_matches_mapping_from: 7 tests (single char, case sensitivity, modifier rejection, ctrl-b, escape/return/tab)
+  - parse_mapping_key: 4 tests (single char, special keys, vim specials, invalid)
+  - mode_to_string: 1 test (all 4 variants)
+  - overlay_xy: 4 tests (bottom-right, top-left, top-center, unknown fallback)
+  - config_to_mode_entry: 4 tests (defaults, control-bracket, custom sequence, too-short sequence)
+- Added 7 new tests to `crates/core/src/config.rs`:
+  - enabled/toggle_hotkey defaults, deserialize enabled=false, custom hotkey, roundtrip, empty JSON defaults, custom mapping roundtrip, per-app config roundtrip
+- Total: 269 tests passing (32 ui-lib + 59 core + 111 core-comprehensive + 67 engine)

@@ -260,4 +260,82 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.excluded_apps.len(), 8);
     }
+
+    #[test]
+    fn default_enabled_and_toggle_hotkey() {
+        let config = Config::default();
+        assert!(config.enabled);
+        assert_eq!(config.toggle_hotkey, "ctrl-cmd-v");
+    }
+
+    #[test]
+    fn deserialize_enabled_false() {
+        let json = r#"{"enabled": false}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(!config.enabled);
+        assert_eq!(config.toggle_hotkey, "ctrl-cmd-v"); // default
+    }
+
+    #[test]
+    fn deserialize_custom_toggle_hotkey() {
+        let json = r#"{"toggle_hotkey": "ctrl-shift-z"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.enabled); // default
+        assert_eq!(config.toggle_hotkey, "ctrl-shift-z");
+    }
+
+    #[test]
+    fn roundtrip_enabled_and_toggle_hotkey() {
+        let mut config = Config::default();
+        config.enabled = false;
+        config.toggle_hotkey = "opt-cmd-x".to_string();
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert!(!parsed.enabled);
+        assert_eq!(parsed.toggle_hotkey, "opt-cmd-x");
+    }
+
+    #[test]
+    fn deserialize_empty_json_gets_defaults() {
+        let json = "{}";
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.enabled);
+        assert_eq!(config.toggle_hotkey, "ctrl-cmd-v");
+        assert!(config.show_overlay);
+        assert!(config.focus_highlight);
+    }
+
+    #[test]
+    fn custom_mapping_roundtrip() {
+        let mapping = CustomMapping {
+            mode: "normal".to_string(),
+            from: "H".to_string(),
+            to: "^".to_string(),
+        };
+        let json = serde_json::to_string(&mapping).unwrap();
+        let parsed: CustomMapping = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.mode, "normal");
+        assert_eq!(parsed.from, "H");
+        assert_eq!(parsed.to, "^");
+    }
+
+    #[test]
+    fn per_app_config_roundtrip() {
+        let mut config = Config::default();
+        let app_cfg = AppConfig {
+            strategy: "keyboard".to_string(),
+            custom_mappings: vec![CustomMapping {
+                mode: "normal".to_string(),
+                from: "j".to_string(),
+                to: "k".to_string(),
+            }],
+        };
+        config.per_app.insert("com.example.app".to_string(), app_cfg);
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: Config = serde_json::from_str(&json).unwrap();
+        let app = parsed.per_app.get("com.example.app").unwrap();
+        assert_eq!(app.strategy, "keyboard");
+        assert_eq!(app.custom_mappings.len(), 1);
+        assert_eq!(app.custom_mappings[0].from, "j");
+    }
 }

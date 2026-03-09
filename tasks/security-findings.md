@@ -353,3 +353,53 @@ _None found._
 | Medium   | 1 |
 | Low      | 4 |
 | **Total** | **5** |
+
+---
+
+# Security Audit — 2026-03-09 (Security Fix Re-check)
+
+**Scope:** Unstaged changes to `ui/src-tauri/src/lib.rs` — verification that all 5 prior findings are addressed
+**Stack:** Rust / Tauri 2 / HTML+JS
+**Files audited:** 1 source file
+
+## Prior Findings Status (Audit "UX Polish + Tests" — all 5)
+
+- **MEDIUM Nested mutex in custom mapping block** — FIXED (engine lock acquired and released at lib.rs:1351-1353 before config lock at lib.rs:1354; no nested lock holding)
+- **LOW Toggle hotkey TOCTOU** — FIXED (single `mut cfg` lock scope at lib.rs:1248; hotkey check and enabled flip in same lock)
+- **LOW Static innerHTML in mapping form** — NO ACTION NEEDED (static template, CSP active)
+- **LOW Overlay position from trusted backend** — NO ACTION NEEDED (already clamped)
+- **LOW set_toggle_hotkey format validation** — FIXED (modifier names validated against allowlist at lib.rs:384-388; key part validated as single char or recognized special name at lib.rs:392-394)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **Concurrency** — Nested mutex eliminated. Engine lock fully released before config lock in custom mapping block. Toggle hotkey uses single config lock scope. Lock ordering now consistent: engine → config (when both needed in sequence, never simultaneously).
+- **Input validation** — `set_toggle_hotkey` now validates modifier names (ctrl/cmd/opt/option/shift) and key part format (single char or escape/return/tab/backspace). Malformed hotkey strings rejected at API boundary.
+- **A03 Injection** — No new injection vectors. Static innerHTML unchanged (CSP blocks scripts).
+- **A05 Security Misconfiguration** — CSP active. No debug logging.
+- **All other OWASP categories** — No changes relevant to A01, A02, A04, A07-A10.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |

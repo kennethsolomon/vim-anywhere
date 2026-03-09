@@ -379,6 +379,20 @@ fn set_toggle_hotkey(state: tauri::State<'_, Arc<AppState>>, hotkey: String) -> 
     if hotkey.is_empty() || hotkey.len() > 50 {
         return false;
     }
+    // Validate format: optional modifier parts + exactly one key part
+    let parts: Vec<&str> = hotkey.split('-').collect();
+    let valid_modifiers = ["ctrl", "cmd", "opt", "option", "shift"];
+    let key_part = parts[parts.len() - 1];
+    let modifier_parts = &parts[..parts.len() - 1];
+    // All non-final parts must be recognized modifiers
+    if !modifier_parts.iter().all(|p| valid_modifiers.contains(p)) {
+        return false;
+    }
+    // Key part must be a single char or a recognized special key name
+    let valid_special = ["escape", "return", "tab", "backspace"];
+    if key_part.len() != 1 && !valid_special.contains(&key_part) {
+        return false;
+    }
     let mut cfg = state.config.lock().unwrap();
     cfg.toggle_hotkey = hotkey;
     cfg.save().is_ok()
@@ -629,11 +643,7 @@ fn parse_mapping_key(to: &str) -> Option<Key> {
         "return" => Some(Key::Return),
         "tab" => Some(Key::Tab),
         "backspace" => Some(Key::Backspace),
-        s if s.len() == 1 => s.chars().next().map(Key::Char),
-        // Special vim key names
-        "^" => Some(Key::Char('^')),
-        "$" => Some(Key::Char('$')),
-        "0" => Some(Key::Char('0')),
+        s if s.len() == 1 => s.chars().next().map(Key::Char), // handles ^, $, 0, and all single chars
         _ => None,
     }
 }
@@ -1229,13 +1239,15 @@ pub fn run() {
 
                     // ── Global toggle hotkey ─────────────────────────────
                     // Check toggle hotkey BEFORE the enabled check so it works even when disabled.
+                    // Single lock scope to avoid TOCTOU between hotkey read and enabled flip.
                     {
-                        let cfg = state_for_tap.config.lock().unwrap();
-                        let hotkey = cfg.toggle_hotkey.clone();
-                        drop(cfg);
+                        let mut cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
+                        let is_hotkey = matches_hotkey(&key_event, &cfg.toggle_hotkey);
 
-                        if matches_hotkey(&key_event, &hotkey) {
-                            let mut cfg = state_for_tap.config.lock().unwrap();
+                        if is_hotkey {
                             cfg.enabled = !cfg.enabled;
                             let enabled = cfg.enabled;
                             let _ = cfg.save();
@@ -1262,7 +1274,10 @@ pub fn run() {
 
                     // ── Enabled check ───────────────────────────────────
                     {
-                        let cfg = state_for_tap.config.lock().unwrap();
+                        let cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
                         if !cfg.enabled {
                             return false; // pass through all keys when disabled
                         }
@@ -1283,7 +1298,10 @@ pub fn run() {
 
                     // Check frontmost app
                     if let Some(app_info) = app_detection::get_frontmost_app() {
-                        let cfg = state_for_tap.config.lock().unwrap();
+                        let cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
 
                         // Check excluded apps list (terminals, etc.)
                         let is_excluded = cfg.excluded_apps.iter().any(|a| a == &app_info.bundle_id);
@@ -1318,7 +1336,10 @@ pub fn run() {
                     // Only intercept known vim Ctrl motions (b, d, f, u), pass through rest
                     if key_event.modifiers.contains(&vim_anywhere_core::parser::Modifier::Control) {
                         if let Key::Char(ch) = &key_event.key {
-                            let cfg = state_for_tap.config.lock().unwrap();
+                            let cfg = match state_for_tap.config.lock() {
+                                Ok(c) => c,
+                                Err(_) => return false,
+                            };
                             let motion_key = format!("ctrl-{}", ch);
                             if cfg.disabled_motions.contains(&motion_key) {
                                 return false;
@@ -1333,11 +1354,15 @@ pub fn run() {
                     // ── Custom mapping remapping ─────────────────────────
                     // Remap key_event based on custom_mappings (global + per-app merged).
                     // Only remap once per event to prevent remap loops.
+                    // Lock ordering: engine first (released), then config — avoids nested locks.
                     let key_event = {
-                        let cfg = state_for_tap.config.lock().unwrap();
                         let current_mode_for_remap = state_for_tap.engine.lock()
                             .map(|e| e.mode())
                             .unwrap_or(Mode::Insert);
+                        let cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
                         let mode_str = match current_mode_for_remap {
                             Mode::Normal => "normal",
                             Mode::Insert => "insert",

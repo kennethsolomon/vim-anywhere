@@ -13,7 +13,7 @@
 | 6 | /write-tests | done | 39 new tests (32 ui-lib + 7 config), 269 total passing |
 | 7 | /commit | done | test(ux): hotkey matching, mapping helpers, config fields |
 | 8 | /debug | skipped | user proceeded to /security-check |
-| 9 | /security-check | done | 0 critical, 0 high, 1 medium, 4 low — clean enough |
+| 9 | /security-check | done | clean on attempt 2 — 0 issues after fixes |
 | 10 | /commit | >> next << | conditional |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |

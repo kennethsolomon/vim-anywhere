@@ -35,6 +35,10 @@ pub struct Config {
     pub per_app: HashMap<String, AppConfig>,
     #[serde(default)]
     pub onboarding_complete: bool,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_toggle_hotkey")]
+    pub toggle_hotkey: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +75,7 @@ fn default_true() -> bool { true }
 fn default_mode_entry() -> String { "escape".to_string() }
 fn default_dim_intensity() -> String { "light".to_string() }
 fn default_strategy() -> String { "accessibility".to_string() }
+fn default_toggle_hotkey() -> String { "ctrl-cmd-v".to_string() }
 fn default_excluded_apps() -> Vec<String> {
     vec![
         "com.apple.Terminal".to_string(),
@@ -113,6 +118,8 @@ impl Default for Config {
             excluded_apps: default_excluded_apps(),
             per_app: HashMap::new(),
             onboarding_complete: false,
+            enabled: true,
+            toggle_hotkey: default_toggle_hotkey(),
         }
     }
 }

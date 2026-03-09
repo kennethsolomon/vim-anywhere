@@ -504,4 +504,102 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
     });
   }
+
+  // ── Global Toggle ──────────────────────────────────────────────────────
+  const hotkeyDisplay = document.getElementById("hotkey-display");
+  const recordBtn = document.getElementById("btn-record-hotkey");
+  const toggleStatusDot = document.getElementById("toggle-status-dot");
+  const toggleStatusText = document.getElementById("toggle-status-text");
+
+  // Format hotkey string for display (ctrl-cmd-v → Ctrl+Cmd+V)
+  function formatHotkey(hotkey) {
+    if (!hotkey) return "Not set";
+    return hotkey.split("-").map((part) => {
+      if (part === "ctrl") return "Ctrl";
+      if (part === "cmd") return "Cmd";
+      if (part === "opt" || part === "option") return "Opt";
+      if (part === "shift") return "Shift";
+      return part.toUpperCase();
+    }).join("+");
+  }
+
+  // Initialize hotkey display
+  if (hotkeyDisplay && config.toggle_hotkey) {
+    hotkeyDisplay.textContent = formatHotkey(config.toggle_hotkey);
+  }
+
+  // Initialize toggle status
+  async function updateToggleStatus() {
+    try {
+      const enabled = await invoke("get_enabled");
+      if (toggleStatusDot) {
+        toggleStatusDot.className = "status-dot " + (enabled ? "active" : "inactive");
+      }
+      if (toggleStatusText) {
+        toggleStatusText.textContent = enabled ? "Enabled" : "Disabled";
+      }
+    } catch (e) { console.warn("Failed to get enabled:", e); }
+  }
+  await updateToggleStatus();
+
+  // Listen for toggle changes
+  await listen("toggle-changed", (event) => {
+    const enabled = event.payload.enabled;
+    if (toggleStatusDot) {
+      toggleStatusDot.className = "status-dot " + (enabled ? "active" : "inactive");
+    }
+    if (toggleStatusText) {
+      toggleStatusText.textContent = enabled ? "Enabled" : "Disabled";
+    }
+  });
+
+  // Hotkey recording
+  if (recordBtn) {
+    let recording = false;
+
+    recordBtn.addEventListener("click", () => {
+      if (recording) return;
+      recording = true;
+      recordBtn.textContent = "Press keys...";
+      if (hotkeyDisplay) hotkeyDisplay.classList.add("recording");
+
+      function onKeyDown(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Ignore modifier-only presses
+        if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return;
+
+        const parts = [];
+        if (e.ctrlKey) parts.push("ctrl");
+        if (e.metaKey) parts.push("cmd");
+        if (e.altKey) parts.push("opt");
+        if (e.shiftKey) parts.push("shift");
+
+        // Get the key character
+        let keyName = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+        if (keyName === "escape") keyName = "escape";
+        else if (keyName === "enter") keyName = "return";
+        else if (keyName === "tab") keyName = "tab";
+        else if (keyName === "backspace") keyName = "backspace";
+        parts.push(keyName);
+
+        const hotkey = parts.join("-");
+
+        // Save and update display
+        invoke("set_toggle_hotkey", { hotkey }).then(() => {
+          if (hotkeyDisplay) {
+            hotkeyDisplay.textContent = formatHotkey(hotkey);
+            hotkeyDisplay.classList.remove("recording");
+          }
+        });
+
+        recording = false;
+        recordBtn.textContent = "Record...";
+        document.removeEventListener("keydown", onKeyDown, true);
+      }
+
+      document.addEventListener("keydown", onKeyDown, true);
+    });
+  }
 });

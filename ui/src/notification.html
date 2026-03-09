@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="notification.css" />
+    <script type="module" src="/notification.js" defer></script>
+  </head>
+  <body>
+    <div class="notification-toast hidden" id="notification-toast">
+      <div class="notification-content">
+        <span class="notification-dot"></span>
+        <span class="notification-message" id="notification-message">Not supported in this app</span>
+      </div>
+      <div class="notification-actions" id="notification-actions">
+        <button class="notification-btn" id="btn-exclude">Exclude app</button>
+        <button class="notification-btn secondary" id="btn-dismiss">Dismiss</button>
+      </div>
+    </div>
+  </body>
+</html>

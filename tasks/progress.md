@@ -67,3 +67,54 @@
   - HIGH: Enabled CSP in tauri.conf.json; added RAII AXElement wrapper in accessibility.rs
   - MEDIUM: Fixed CFString ownership (wrap_under_create_rule); config load with warnings; robust home_dir; .gitignore secrets
   - LOW: Removed unused greet command; Key::Unknown variant; send_key_event error logging; cleaned unused imports
+
+## Session: 2026-03-09 (UX Polish)
+- Phase 1: Global toggle hotkey
+  - Added `enabled` + `toggle_hotkey` fields to Config (config.rs)
+  - Added `toggle_enabled`, `set_toggle_hotkey`, `get_enabled` Tauri commands (lib.rs)
+  - Added `matches_hotkey()` helper for parsing hotkey strings (lib.rs)
+  - Hotkey detection + enabled check at top of event tap callback
+  - Hotkey works even when vim-anywhere is disabled; resets mode on disable
+- Phase 2: Toggle feedback window
+  - Created toggle-feedback.html/css/js — glass badge with ON (green) / OFF (red), auto-dismiss
+  - Created toggle-feedback Tauri window: transparent, centered, click-through
+- Phase 3: Custom mappings wired up
+  - Added custom mapping remapping in event tap callback (before eng.handle_key())
+  - Per-app mappings merged with global (per-app takes precedence)
+  - Added key_matches_mapping_from() + parse_mapping_key() helpers
+  - Added input validation to add_custom_mapping (non-empty, max 10, valid mode)
+- Phase 4: Disabled motions — already functional for Ctrl-b/d/f/u via existing check
+- Phase 5: AX failure notification
+  - Added `notified_apps: HashSet<String>` to AppState
+  - Created notification.html/css/js — toast with red dot + "Exclude app" / "Dismiss" buttons
+  - Created notification Tauri window: bottom center, clickable (not click-through)
+  - Emit show-notification on get_focused_element() failure (once per app per session)
+- Phase 6: Near-cursor mode indicator
+  - Updated overlay.js: loads config position, repositions on focus-highlight-update when "near-cursor"
+  - Added flip logic for off-screen edges
+  - Pending keys shown inline (" · keys") in near-cursor mode
+  - Added "Near Cursor" option to overlay position select in index.html
+  - Updated set_overlay_position to emit overlay-position-changed event
+- Phase 7: Settings UI
+  - Added "Global Toggle" section: hotkey badge, "Record..." button, status dot
+  - Hotkey recording: captures keydown with modifiers, formats + saves
+  - Toggle status live-updates via toggle-changed event
+  - Added hotkey-badge CSS with recording pulse animation
+- Phase 8: Build & verify
+  - cargo build: clean compile
+  - cargo test: 230 tests pass
+  - cargo clippy: no new warnings (fixed starts_with, redundant closure)
+
+Files touched:
+  - crates/core/src/config.rs
+  - ui/src-tauri/src/lib.rs
+  - ui/src/toggle-feedback.html (new)
+  - ui/src/toggle-feedback.css (new)
+  - ui/src/toggle-feedback.js (new)
+  - ui/src/notification.html (new)
+  - ui/src/notification.css (new)
+  - ui/src/notification.js (new)
+  - ui/src/overlay.js
+  - ui/src/index.html
+  - ui/src/styles.css
+  - ui/src/main.js

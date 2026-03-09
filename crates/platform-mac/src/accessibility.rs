@@ -199,6 +199,12 @@ pub fn is_editable_text(element: &AXElement) -> bool {
         }
     }
 
+    is_ax_value_settable(element)
+}
+
+/// Check if AXValue is settable for the given element.
+/// Returns false for contenteditable divs in browsers where the DOM rejects AX writes.
+pub fn is_ax_value_settable(element: &AXElement) -> bool {
     unsafe {
         let attr = CFString::new("AXValue");
         let mut settable = false;

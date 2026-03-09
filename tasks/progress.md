@@ -54,6 +54,15 @@
   - Created `tests/engine_comprehensive.rs` (insert variants, operator+motion, text objects, visual, counts, edge cases)
   - Created `src/lib.rs` to export Engine/EngineResult for integration tests
   - Total: 205 tests passing
+
+## Session: 2026-03-09 (bug fixes)
+- Phase 1-4: All fixes applied to `ui/src-tauri/src/lib.rs`
+  - Fix 1: `PhysicalPosition`/`PhysicalSize` → `LogicalPosition`/`LogicalSize` for focus border (Retina fix)
+  - Fix 2: Added editability check before Escape→Normal in Insert mode handler
+  - Fix 3: Auto-reset to Insert when focused element is not editable (hides overlay+border on focus loss)
+  - Fix 4: Block cursor guarded by editability (defense-in-depth, covered by Fix 2)
+- Phase 5: Build + test + clippy all pass (52 tests, no new warnings)
+
 - /security-check + fixes: Resolved all 9 findings
   - HIGH: Enabled CSP in tauri.conf.json; added RAII AXElement wrapper in accessibility.rs
   - MEDIUM: Fixed CFString ownership (wrap_under_create_rule); config load with warnings; robust home_dir; .gitignore secrets

@@ -31,9 +31,25 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Redesigned mode overlay with pending keys display, flash transitions, and configurable position
 - Per-app strategy configuration (Accessibility, Keyboard, Disabled) via settings wizard
 - Bundle ID validation on excluded app entries (non-empty, max 255 chars, ASCII alphanumeric + dots/hyphens/underscores)
+- Global toggle hotkey (default Ctrl+Cmd+V) to enable/disable vim-anywhere with visual feedback badge
+- Custom key mappings: remap keys per-mode with per-app overrides (global + per-app, up to 10 per scope)
+- AX failure notification toast: shows once per app per session when accessibility fails, with "Exclude app" action
+- Near-cursor mode indicator: overlay follows focused window, flips at screen edges
+- Toggle feedback window: brief ON/OFF badge on hotkey press
+- Hotkey recording UI: "Record..." button captures modifier+key combos in settings
+
+### Fixed
+- Retina display: focus border uses LogicalPosition/LogicalSize instead of PhysicalPosition/PhysicalSize
+- Stale mode on app switch: auto-reset to Insert when focused element is not editable
+- Block cursor only set when focused on a writable text field (defense-in-depth with editability check)
+- Custom escape sequence path now correctly sets block cursor (reuses cached element or fetches fresh)
 
 ### Security
 - RAII wrapper (AXElement) for CoreFoundation objects preventing memory leaks
 - Restrictive Content Security Policy for Tauri webview
 - Proper CFString ownership handling (wrap_under_create_rule for +1 references)
 - Sensitive file patterns added to .gitignore
+- TOCTOU fix: toggle hotkey check and enabled flip in single mutex scope
+- Nested mutex elimination: engine lock released before config lock in custom mapping block
+- Hotkey format validation: modifier allowlist + key format check in set_toggle_hotkey
+- Graceful mutex handling: all event tap config locks use match instead of unwrap (no panic on poisoned mutex)

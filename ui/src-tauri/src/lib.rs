@@ -15,6 +15,7 @@ use vim_anywhere_platform_mac::event_tap;
 use vim_anywhere_platform_mac::keyboard;
 
 use vim_anywhere::EngineResult;
+use std::collections::HashSet;
 
 // ── Shared application state ────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ struct AppState {
     engine: Mutex<Engine>,
     config: Mutex<Config>,
     last_focused_element: Mutex<Option<(String, usize)>>,
+    notified_apps: Mutex<HashSet<String>>,
 }
 
 fn config_to_mode_entry(cfg: &Config) -> ModeEntryConfig {
@@ -169,19 +171,25 @@ fn set_overlay_position(state: tauri::State<'_, Arc<AppState>>, app_handle: taur
     let save_ok = cfg.save().is_ok();
     drop(cfg);
 
-    if let Some(overlay) = app_handle.get_webview_window("overlay") {
-        if let Ok(Some(monitor)) = app_handle.primary_monitor() {
-            let size = monitor.size();
-            let scale = monitor.scale_factor();
-            let screen_w = size.width as f64 / scale;
-            let screen_h = size.height as f64 / scale;
-            let ow = 100.0_f64;
-            let oh = 32.0_f64;
-            let margin = 20.0_f64;
-            let dock_offset = 40.0_f64;
+    // Notify overlay.js of position change
+    let _ = app_handle.emit("overlay-position-changed", serde_json::json!({ "position": &position }));
 
-            let (x, y) = overlay_xy(&position, screen_w, screen_h, ow, oh, margin, dock_offset);
-            let _ = overlay.set_position(tauri::LogicalPosition::new(x, y));
+    // For fixed positions, update window position immediately
+    if position != "near-cursor" {
+        if let Some(overlay) = app_handle.get_webview_window("overlay") {
+            if let Ok(Some(monitor)) = app_handle.primary_monitor() {
+                let size = monitor.size();
+                let scale = monitor.scale_factor();
+                let screen_w = size.width as f64 / scale;
+                let screen_h = size.height as f64 / scale;
+                let ow = 100.0_f64;
+                let oh = 32.0_f64;
+                let margin = 20.0_f64;
+                let dock_offset = 40.0_f64;
+
+                let (x, y) = overlay_xy(&position, screen_w, screen_h, ow, oh, margin, dock_offset);
+                let _ = overlay.set_position(tauri::LogicalPosition::new(x, y));
+            }
         }
     }
     save_ok
@@ -210,6 +218,13 @@ fn set_launch_at_login(state: tauri::State<'_, Arc<AppState>>, enabled: bool) ->
 
 #[tauri::command]
 fn add_custom_mapping(state: tauri::State<'_, Arc<AppState>>, mode: String, from: String, to: String) -> bool {
+    // Validate inputs
+    if from.is_empty() || to.is_empty() || from.len() > 10 || to.len() > 10 {
+        return false;
+    }
+    if !matches!(mode.as_str(), "normal" | "insert" | "visual") {
+        return false;
+    }
     let mut cfg = state.config.lock().unwrap();
     cfg.custom_mappings.push(vim_anywhere_core::config::CustomMapping { mode, from, to });
     cfg.save().is_ok()
@@ -346,6 +361,47 @@ fn reopen_onboarding(state: tauri::State<'_, Arc<AppState>>, app_handle: tauri::
     .resizable(false)
     .center()
     .build();
+}
+
+#[tauri::command]
+fn toggle_enabled(state: tauri::State<'_, Arc<AppState>>, app_handle: tauri::AppHandle) -> bool {
+    let mut cfg = state.config.lock().unwrap();
+    cfg.enabled = !cfg.enabled;
+    let enabled = cfg.enabled;
+    let _ = cfg.save();
+    drop(cfg);
+    let _ = app_handle.emit("toggle-changed", serde_json::json!({ "enabled": enabled }));
+    enabled
+}
+
+#[tauri::command]
+fn set_toggle_hotkey(state: tauri::State<'_, Arc<AppState>>, hotkey: String) -> bool {
+    if hotkey.is_empty() || hotkey.len() > 50 {
+        return false;
+    }
+    // Validate format: optional modifier parts + exactly one key part
+    let parts: Vec<&str> = hotkey.split('-').collect();
+    let valid_modifiers = ["ctrl", "cmd", "opt", "option", "shift"];
+    let key_part = parts[parts.len() - 1];
+    let modifier_parts = &parts[..parts.len() - 1];
+    // All non-final parts must be recognized modifiers
+    if !modifier_parts.iter().all(|p| valid_modifiers.contains(p)) {
+        return false;
+    }
+    // Key part must be a single char or a recognized special key name
+    let valid_special = ["escape", "return", "tab", "backspace"];
+    if key_part.len() != 1 && !valid_special.contains(&key_part) {
+        return false;
+    }
+    let mut cfg = state.config.lock().unwrap();
+    cfg.toggle_hotkey = hotkey;
+    cfg.save().is_ok()
+}
+
+#[tauri::command]
+fn get_enabled(state: tauri::State<'_, Arc<AppState>>) -> bool {
+    let cfg = state.config.lock().unwrap();
+    cfg.enabled
 }
 
 // ── Wizard ──────────────────────────────────────────────────────────────────
@@ -511,6 +567,330 @@ fn set_all_spaces(window: &tauri::WebviewWindow) {
     }
 }
 
+// ── Hotkey matching ──────────────────────────────────────────────────────────
+
+/// Parse a hotkey string like "ctrl-cmd-v" and check if a KeyEvent matches it.
+fn matches_hotkey(event: &vim_anywhere_core::parser::KeyEvent, hotkey: &str) -> bool {
+    use vim_anywhere_core::parser::Modifier;
+
+    let parts: Vec<&str> = hotkey.split('-').collect();
+    if parts.is_empty() {
+        return false;
+    }
+
+    let key_part = parts[parts.len() - 1];
+    let modifier_parts = &parts[..parts.len() - 1];
+
+    let needs_ctrl = modifier_parts.contains(&"ctrl");
+    let needs_cmd = modifier_parts.contains(&"cmd");
+    let needs_option = modifier_parts.contains(&"opt") || modifier_parts.contains(&"option");
+    let needs_shift = modifier_parts.contains(&"shift");
+
+    let has_ctrl = event.modifiers.contains(&Modifier::Control);
+    let has_cmd = event.modifiers.contains(&Modifier::Command);
+    let has_option = event.modifiers.contains(&Modifier::Option);
+    let has_shift = event.modifiers.contains(&Modifier::Shift);
+
+    if has_ctrl != needs_ctrl || has_cmd != needs_cmd || has_option != needs_option || has_shift != needs_shift {
+        return false;
+    }
+
+    match &event.key {
+        Key::Char(c) => {
+            key_part.starts_with(*c) && key_part.len() == 1
+        }
+        Key::Escape => key_part == "escape",
+        Key::Return => key_part == "return",
+        Key::Tab => key_part == "tab",
+        Key::Backspace => key_part == "backspace",
+        _ => false,
+    }
+}
+
+// ── Custom mapping helpers ───────────────────────────────────────────────────
+
+/// Check if a KeyEvent's key matches a mapping's "from" string.
+/// Supports single characters ("h", "H") and special keys ("escape", "ctrl-b").
+fn key_matches_mapping_from(event: &vim_anywhere_core::parser::KeyEvent, from: &str) -> bool {
+    use vim_anywhere_core::parser::Modifier;
+
+    // Handle modifier prefixes like "ctrl-b"
+    if from.contains('-') {
+        return matches_hotkey(event, from);
+    }
+
+    // Simple single-character match (no modifiers required beyond what the char implies)
+    if event.modifiers.contains(&Modifier::Control)
+        || event.modifiers.contains(&Modifier::Command)
+        || event.modifiers.contains(&Modifier::Option)
+    {
+        return false;
+    }
+
+    match &event.key {
+        Key::Char(c) => from.starts_with(*c) && from.len() == 1,
+        Key::Escape => from == "escape",
+        Key::Return => from == "return",
+        Key::Tab => from == "tab",
+        _ => false,
+    }
+}
+
+/// Parse a mapping "to" string into a Key variant.
+fn parse_mapping_key(to: &str) -> Option<Key> {
+    match to {
+        "escape" => Some(Key::Escape),
+        "return" => Some(Key::Return),
+        "tab" => Some(Key::Tab),
+        "backspace" => Some(Key::Backspace),
+        s if s.len() == 1 => s.chars().next().map(Key::Char), // handles ^, $, 0, and all single chars
+        _ => None,
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vim_anywhere_core::parser::{Key, KeyEvent, Modifier};
+
+    fn key_event(key: Key, mods: &[Modifier]) -> KeyEvent {
+        KeyEvent {
+            key,
+            modifiers: mods.to_vec(),
+            is_repeat: false,
+        }
+    }
+
+    // -- matches_hotkey -------------------------------------------------------
+
+    #[test]
+    fn hotkey_ctrl_cmd_v_matches() {
+        let ev = key_event(Key::Char('v'), &[Modifier::Control, Modifier::Command]);
+        assert!(matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_ctrl_cmd_v_rejects_without_cmd() {
+        let ev = key_event(Key::Char('v'), &[Modifier::Control]);
+        assert!(!matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_ctrl_cmd_v_rejects_wrong_key() {
+        let ev = key_event(Key::Char('x'), &[Modifier::Control, Modifier::Command]);
+        assert!(!matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_extra_modifier_rejects() {
+        let ev = key_event(Key::Char('v'), &[Modifier::Control, Modifier::Command, Modifier::Shift]);
+        assert!(!matches_hotkey(&ev, "ctrl-cmd-v"));
+    }
+
+    #[test]
+    fn hotkey_shift_escape() {
+        let ev = key_event(Key::Escape, &[Modifier::Shift]);
+        assert!(matches_hotkey(&ev, "shift-escape"));
+    }
+
+    #[test]
+    fn hotkey_option_alias() {
+        let ev = key_event(Key::Char('a'), &[Modifier::Option]);
+        assert!(matches_hotkey(&ev, "opt-a"));
+        assert!(matches_hotkey(&ev, "option-a"));
+    }
+
+    #[test]
+    fn hotkey_return_key() {
+        let ev = key_event(Key::Return, &[Modifier::Control]);
+        assert!(matches_hotkey(&ev, "ctrl-return"));
+    }
+
+    #[test]
+    fn hotkey_tab_key() {
+        let ev = key_event(Key::Tab, &[]);
+        assert!(matches_hotkey(&ev, "tab"));
+    }
+
+    #[test]
+    fn hotkey_backspace_key() {
+        let ev = key_event(Key::Backspace, &[Modifier::Command]);
+        assert!(matches_hotkey(&ev, "cmd-backspace"));
+    }
+
+    #[test]
+    fn hotkey_empty_string_rejects() {
+        let ev = key_event(Key::Char('a'), &[]);
+        assert!(!matches_hotkey(&ev, ""));
+    }
+
+    #[test]
+    fn hotkey_bare_char_no_modifiers() {
+        let ev = key_event(Key::Char('z'), &[]);
+        assert!(matches_hotkey(&ev, "z"));
+    }
+
+    #[test]
+    fn hotkey_bare_char_rejects_with_modifier() {
+        let ev = key_event(Key::Char('z'), &[Modifier::Control]);
+        assert!(!matches_hotkey(&ev, "z"));
+    }
+
+    // -- key_matches_mapping_from ---------------------------------------------
+
+    #[test]
+    fn mapping_from_single_char_matches() {
+        let ev = key_event(Key::Char('H'), &[]);
+        assert!(key_matches_mapping_from(&ev, "H"));
+    }
+
+    #[test]
+    fn mapping_from_single_char_case_sensitive() {
+        let ev = key_event(Key::Char('h'), &[]);
+        assert!(!key_matches_mapping_from(&ev, "H"));
+    }
+
+    #[test]
+    fn mapping_from_rejects_with_unexpected_modifier() {
+        let ev = key_event(Key::Char('h'), &[Modifier::Control]);
+        assert!(!key_matches_mapping_from(&ev, "h"));
+    }
+
+    #[test]
+    fn mapping_from_ctrl_b_matches() {
+        let ev = key_event(Key::Char('b'), &[Modifier::Control]);
+        assert!(key_matches_mapping_from(&ev, "ctrl-b"));
+    }
+
+    #[test]
+    fn mapping_from_escape_matches() {
+        let ev = key_event(Key::Escape, &[]);
+        assert!(key_matches_mapping_from(&ev, "escape"));
+    }
+
+    #[test]
+    fn mapping_from_return_matches() {
+        let ev = key_event(Key::Return, &[]);
+        assert!(key_matches_mapping_from(&ev, "return"));
+    }
+
+    #[test]
+    fn mapping_from_tab_matches() {
+        let ev = key_event(Key::Tab, &[]);
+        assert!(key_matches_mapping_from(&ev, "tab"));
+    }
+
+    // -- parse_mapping_key ----------------------------------------------------
+
+    #[test]
+    fn parse_single_char() {
+        assert_eq!(parse_mapping_key("a"), Some(Key::Char('a')));
+        assert_eq!(parse_mapping_key("Z"), Some(Key::Char('Z')));
+    }
+
+    #[test]
+    fn parse_special_keys() {
+        assert_eq!(parse_mapping_key("escape"), Some(Key::Escape));
+        assert_eq!(parse_mapping_key("return"), Some(Key::Return));
+        assert_eq!(parse_mapping_key("tab"), Some(Key::Tab));
+        assert_eq!(parse_mapping_key("backspace"), Some(Key::Backspace));
+    }
+
+    #[test]
+    fn parse_vim_special_chars() {
+        assert_eq!(parse_mapping_key("^"), Some(Key::Char('^')));
+        assert_eq!(parse_mapping_key("$"), Some(Key::Char('$')));
+        assert_eq!(parse_mapping_key("0"), Some(Key::Char('0')));
+    }
+
+    #[test]
+    fn parse_invalid_returns_none() {
+        assert_eq!(parse_mapping_key(""), None);
+        assert_eq!(parse_mapping_key("ctrl-a"), None); // multi-char, not a special name
+        assert_eq!(parse_mapping_key("abc"), None);
+    }
+
+    // -- mode_to_string -------------------------------------------------------
+
+    #[test]
+    fn mode_to_string_variants() {
+        assert_eq!(mode_to_string(Mode::Normal), "NORMAL");
+        assert_eq!(mode_to_string(Mode::Insert), "INSERT");
+        assert_eq!(mode_to_string(Mode::VisualCharacterwise), "VISUAL");
+        assert_eq!(mode_to_string(Mode::VisualLinewise), "V-LINE");
+    }
+
+    // -- overlay_xy -----------------------------------------------------------
+
+    #[test]
+    fn overlay_bottom_right_default() {
+        let (x, y) = overlay_xy("bottom-right", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!(x, 1800.0); // 1920 - 100 - 20
+        assert_eq!(y, 950.0);  // 1080 - 50 - 20 - 60
+    }
+
+    #[test]
+    fn overlay_top_left() {
+        let (x, y) = overlay_xy("top-left", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!(x, 20.0);
+        assert_eq!(y, 50.0); // 20 + 30 (menu bar)
+    }
+
+    #[test]
+    fn overlay_top_center() {
+        let (x, y) = overlay_xy("top-center", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!(x, 910.0); // (1920 - 100) / 2
+        assert_eq!(y, 50.0);
+    }
+
+    #[test]
+    fn overlay_unknown_falls_through_to_bottom_right() {
+        let (x1, y1) = overlay_xy("nonsense", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        let (x2, y2) = overlay_xy("bottom-right", 1920.0, 1080.0, 100.0, 50.0, 20.0, 60.0);
+        assert_eq!((x1, y1), (x2, y2));
+    }
+
+    // -- config_to_mode_entry -------------------------------------------------
+
+    #[test]
+    fn config_to_mode_entry_defaults() {
+        let config = Config::default();
+        let me = config_to_mode_entry(&config);
+        assert!(!me.control_bracket);
+        assert!(me.custom_sequence.is_none());
+        assert!(me.smart_escape);
+        assert!(!me.double_escape_sends_real);
+    }
+
+    #[test]
+    fn config_to_mode_entry_control_bracket() {
+        let mut config = Config::default();
+        config.mode_entry.method = "control-bracket".to_string();
+        let me = config_to_mode_entry(&config);
+        assert!(me.control_bracket);
+    }
+
+    #[test]
+    fn config_to_mode_entry_custom_sequence() {
+        let mut config = Config::default();
+        config.mode_entry.method = "custom".to_string();
+        config.mode_entry.custom_sequence = Some("jk".to_string());
+        let me = config_to_mode_entry(&config);
+        assert_eq!(me.custom_sequence, Some(['j', 'k']));
+    }
+
+    #[test]
+    fn config_to_mode_entry_custom_sequence_too_short() {
+        let mut config = Config::default();
+        config.mode_entry.method = "custom".to_string();
+        config.mode_entry.custom_sequence = Some("j".to_string());
+        let me = config_to_mode_entry(&config);
+        assert!(me.custom_sequence.is_none()); // too short, falls back to None
+    }
+}
+
 // ── App entry point ─────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -523,6 +903,7 @@ pub fn run() {
         engine: Mutex::new(engine),
         config: Mutex::new(config),
         last_focused_element: Mutex::new(None),
+        notified_apps: Mutex::new(HashSet::new()),
     });
 
     tauri::Builder::default()
@@ -553,6 +934,9 @@ pub fn run() {
             set_excluded_app,
             remove_excluded_app,
             reopen_onboarding,
+            toggle_enabled,
+            set_toggle_hotkey,
+            get_enabled,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -660,6 +1044,66 @@ pub fn run() {
                     .resizable(false)
                     .center()
                     .build();
+                }
+            }
+
+            // ── Notification window (bottom center, AX failure toast) ──
+            {
+                if let Ok(notif_win) = tauri::WebviewWindowBuilder::new(
+                    app,
+                    "notification",
+                    tauri::WebviewUrl::App("notification.html".into()),
+                )
+                .title("")
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .resizable(false)
+                .focused(false)
+                .skip_taskbar(true)
+                .visible(false)
+                .inner_size(400.0, 80.0)
+                .build()
+                {
+                    // Position at bottom center
+                    if let Ok(Some(monitor)) = app.primary_monitor() {
+                        let size = monitor.size();
+                        let scale = monitor.scale_factor();
+                        let screen_w = size.width as f64 / scale;
+                        let screen_h = size.height as f64 / scale;
+                        let _ = notif_win.set_position(tauri::LogicalPosition::new(
+                            (screen_w - 400.0) / 2.0,
+                            screen_h - 80.0 - 32.0,
+                        ));
+                    }
+                    let _ = notif_win.set_ignore_cursor_events(false); // clickable for buttons
+                    #[cfg(target_os = "macos")]
+                    set_all_spaces(&notif_win);
+                }
+            }
+
+            // ── Toggle feedback window (center screen, auto-dismiss) ──
+            {
+                if let Ok(feedback_win) = tauri::WebviewWindowBuilder::new(
+                    app,
+                    "toggle-feedback",
+                    tauri::WebviewUrl::App("toggle-feedback.html".into()),
+                )
+                .title("")
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .resizable(false)
+                .focused(false)
+                .skip_taskbar(true)
+                .visible(false)
+                .inner_size(200.0, 64.0)
+                .center()
+                .build()
+                {
+                    let _ = feedback_win.set_ignore_cursor_events(true);
+                    #[cfg(target_os = "macos")]
+                    set_all_spaces(&feedback_win);
                 }
             }
 
@@ -793,6 +1237,52 @@ pub fn run() {
                         }
                     };
 
+                    // ── Global toggle hotkey ─────────────────────────────
+                    // Check toggle hotkey BEFORE the enabled check so it works even when disabled.
+                    // Single lock scope to avoid TOCTOU between hotkey read and enabled flip.
+                    {
+                        let mut cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
+                        let is_hotkey = matches_hotkey(&key_event, &cfg.toggle_hotkey);
+
+                        if is_hotkey {
+                            cfg.enabled = !cfg.enabled;
+                            let enabled = cfg.enabled;
+                            let _ = cfg.save();
+                            drop(cfg);
+
+                            // Reset to insert when disabling
+                            if !enabled {
+                                if let Ok(mut eng) = state_for_tap.engine.lock() {
+                                    if eng.mode() != Mode::Insert {
+                                        eng.reset_to_insert();
+                                        notify_mode(Mode::Insert);
+                                    }
+                                }
+                            }
+
+                            let _ = app_handle2.emit("toggle-changed", serde_json::json!({ "enabled": enabled }));
+                            // Show the feedback window briefly
+                            if let Some(fw) = app_handle2.get_webview_window("toggle-feedback") {
+                                let _ = fw.show();
+                            }
+                            return true; // suppress the hotkey itself
+                        }
+                    }
+
+                    // ── Enabled check ───────────────────────────────────
+                    {
+                        let cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
+                        if !cfg.enabled {
+                            return false; // pass through all keys when disabled
+                        }
+                    }
+
                     // Always pass through Cmd shortcuts
                     if key_event.modifiers.contains(&vim_anywhere_core::parser::Modifier::Command) {
                         return false;
@@ -808,7 +1298,10 @@ pub fn run() {
 
                     // Check frontmost app
                     if let Some(app_info) = app_detection::get_frontmost_app() {
-                        let cfg = state_for_tap.config.lock().unwrap();
+                        let cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
 
                         // Check excluded apps list (terminals, etc.)
                         let is_excluded = cfg.excluded_apps.iter().any(|a| a == &app_info.bundle_id);
@@ -843,7 +1336,10 @@ pub fn run() {
                     // Only intercept known vim Ctrl motions (b, d, f, u), pass through rest
                     if key_event.modifiers.contains(&vim_anywhere_core::parser::Modifier::Control) {
                         if let Key::Char(ch) = &key_event.key {
-                            let cfg = state_for_tap.config.lock().unwrap();
+                            let cfg = match state_for_tap.config.lock() {
+                                Ok(c) => c,
+                                Err(_) => return false,
+                            };
                             let motion_key = format!("ctrl-{}", ch);
                             if cfg.disabled_motions.contains(&motion_key) {
                                 return false;
@@ -854,6 +1350,46 @@ pub fn run() {
                             }
                         }
                     }
+
+                    // ── Custom mapping remapping ─────────────────────────
+                    // Remap key_event based on custom_mappings (global + per-app merged).
+                    // Only remap once per event to prevent remap loops.
+                    // Lock ordering: engine first (released), then config — avoids nested locks.
+                    let key_event = {
+                        let current_mode_for_remap = state_for_tap.engine.lock()
+                            .map(|e| e.mode())
+                            .unwrap_or(Mode::Insert);
+                        let cfg = match state_for_tap.config.lock() {
+                            Ok(c) => c,
+                            Err(_) => return false,
+                        };
+                        let mode_str = match current_mode_for_remap {
+                            Mode::Normal => "normal",
+                            Mode::Insert => "insert",
+                            Mode::VisualCharacterwise | Mode::VisualLinewise => "visual",
+                        };
+
+                        // Merge global + per-app mappings (per-app takes precedence)
+                        let app_bundle = app_detection::get_frontmost_app()
+                            .map(|a| a.bundle_id)
+                            .unwrap_or_default();
+                        let per_app_mappings = cfg.per_app.get(&app_bundle)
+                            .map(|ac| ac.custom_mappings.as_slice())
+                            .unwrap_or(&[]);
+
+                        let mut remapped = key_event.clone();
+                        // Check per-app first, then global
+                        let found = per_app_mappings.iter().chain(cfg.custom_mappings.iter())
+                            .find(|m| m.mode == mode_str && key_matches_mapping_from(&key_event, &m.from));
+
+                        if let Some(mapping) = found {
+                            if let Some(new_key) = parse_mapping_key(&mapping.to) {
+                                remapped.key = new_key;
+                            }
+                        }
+                        drop(cfg);
+                        remapped
+                    };
 
                     let mut eng = match state_for_tap.engine.lock() {
                         Ok(e) => e,
@@ -909,7 +1445,7 @@ pub fn run() {
                                 // Reuse cached element from Escape writability check, or
                                 // fetch fresh for custom sequence path (e.g. "jk")
                                 if new_mode == Mode::Normal {
-                                    let el = escape_element.or_else(|| accessibility::get_focused_element());
+                                    let el = escape_element.or_else(accessibility::get_focused_element);
                                     if let Some(ref el) = el {
                                         if let Some((loc, _)) = accessibility::get_ax_selected_range(el) {
                                             let _ = accessibility::set_ax_selected_range(el, loc, 1);
@@ -930,7 +1466,22 @@ pub fn run() {
                     // Get focused AX element — if we can't, pass through everything
                     let element = match accessibility::get_focused_element() {
                         Some(el) => el,
-                        None => return false,
+                        None => {
+                            // Notify user that AX failed (once per app per session)
+                            if let Some(app_info) = app_detection::get_frontmost_app() {
+                                let mut notified = state_for_tap.notified_apps.lock().unwrap();
+                                if notified.insert(app_info.bundle_id.clone()) {
+                                    let _ = app_handle2.emit("show-notification", serde_json::json!({
+                                        "app_name": app_info.name,
+                                        "bundle_id": app_info.bundle_id,
+                                    }));
+                                    if let Some(nw) = app_handle2.get_webview_window("notification") {
+                                        let _ = nw.show();
+                                    }
+                                }
+                            }
+                            return false;
+                        }
                     };
 
                     // Fetch AX role once — used for both editability check and focus tracking

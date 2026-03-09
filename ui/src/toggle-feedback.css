@@ -1,0 +1,72 @@
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/assets/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: transparent;
+  overflow: hidden;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-font-smoothing: antialiased;
+}
+
+.feedback-badge {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 16px 32px;
+  border-radius: 8px;
+  text-align: center;
+  color: #fff;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.3s ease, transform 0.15s ease;
+}
+
+.feedback-badge.on {
+  background: rgba(0, 255, 159, 0.85);
+}
+
+.feedback-badge.off {
+  background: rgba(255, 64, 64, 0.85);
+}
+
+.feedback-badge.hidden {
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+}
+
+.feedback-badge.show-anim {
+  animation: show-feedback 0.15s ease forwards;
+}
+
+@keyframes show-feedback {
+  0%   { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.feedback-badge.hide-anim {
+  animation: hide-feedback 0.3s ease forwards;
+}
+
+@keyframes hide-feedback {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.85); }
+}

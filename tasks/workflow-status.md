@@ -5,17 +5,17 @@
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | /brainstorm | done | Approach B — fix Retina border, context-aware escape, auto-reset on focus loss |
-| 2 | /frontend-design | skipped | bug-fix only, no UI design needed |
-| 3 | /write-plan | done | 4 phases + verify, single file |
-| 4 | /execute-plan | done | all 4 phases complete, 52 tests passing |
-| 5 | /commit | done | 835213f + 313bfa3 |
-| 6 | /write-tests | done | 7 new tests, 59 total passing |
-| 7 | /commit | done | 723ed0b |
-| 8 | /debug | skipped | user skipped |
-| 9 | /security-check | done | clean — 0 findings |
-| 10 | /commit | skipped | security was clean |
-| 11 | /review | >> next << | loop |
-| 12 | /commit | not yet | conditional |
-| 13 | /finish-feature | not yet | |
+| 1 | /brainstorm | done | Approach A — polish UX, wire up dead features, global toggle, AX failure notification, near-cursor indicator |
+| 2 | /frontend-design | done | near-cursor indicator, AX failure toast, toggle feedback, settings additions |
+| 3 | /write-plan | done | 8 phases, 33 steps |
+| 4 | /execute-plan | done | all phases complete, 230 tests passing, 0 new clippy warnings |
+| 5 | /commit | done | feat(ux): UX polish — global toggle, custom mappings, AX notification, near-cursor indicator |
+| 6 | /write-tests | done | 39 new tests (32 ui-lib + 7 config), 269 total passing |
+| 7 | /commit | done | test(ux): hotkey matching, mapping helpers, config fields |
+| 8 | /debug | skipped | user proceeded to /security-check |
+| 9 | /security-check | done | clean on attempt 2 — 0 issues after fixes |
+| 10 | /commit | done | fix(security): mutex hardening, hotkey validation, dead code removal |
+| 11 | /review | done | clean on attempt 2 — 0 issues |
+| 12 | /commit | skipped | review was clean |
+| 13 | /finish-feature | >> next << | |
 | 14 | /release | not yet | optional |

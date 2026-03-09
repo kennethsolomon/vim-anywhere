@@ -273,3 +273,83 @@ _None found._
 | Medium   | 0 |
 | Low      | 0 |
 | **Total** | **0** |
+
+---
+
+# Security Audit — 2026-03-09 (UX Polish + Tests)
+
+**Scope:** 3 commits on `feature/seamless-integration` — `325cafd` (feat: UX polish), `49225c9` (chore: tasks), `4ce7f4a` (test: new tests)
+**Stack:** Rust / Tauri 2 / HTML+JS
+**Files audited:** 12 source files
+
+## Changes Reviewed
+
+1. Global toggle hotkey (matches_hotkey, toggle_enabled, set_toggle_hotkey, get_enabled)
+2. Toggle feedback window (toggle-feedback.html/css/js)
+3. Custom mapping remapping in event tap (key_matches_mapping_from, parse_mapping_key)
+4. AX failure notification window (notification.html/css/js)
+5. Near-cursor mode indicator (overlay.js repositioning)
+6. Settings UI updates (Global Toggle section, hotkey recording)
+7. 39 new tests (config + lib.rs helpers)
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+- **[ui/src-tauri/src/lib.rs:1338-1339]** Nested mutex acquisition: `config` lock held while acquiring `engine` lock in custom mapping remapping block
+  **Standard:** CWE-833 — Deadlock
+  **Risk:** The custom mapping block at line 1337-1367 acquires `config` lock, then within that scope acquires `engine` lock (line 1338-1339 via `state_for_tap.engine.lock()`). Other code paths (e.g. `save_config_full` at line 128-136) acquire `config` then `engine`. The lock order is consistent across the codebase (always config-before-engine), so no actual deadlock under current code. However, it's fragile — any future code acquiring engine-then-config would deadlock.
+  **Recommendation:** Extract the engine mode read outside the config lock scope, or document the lock ordering contract explicitly.
+
+## Low / Informational
+
+- **[ui/src-tauri/src/lib.rs:1233-1235]** Toggle hotkey check acquires config lock, drops it, then immediately re-acquires at line 1238 if the hotkey matches. Two lock acquisitions in rapid succession.
+  **Standard:** Performance / CWE-362 — TOCTOU
+  **Risk:** Between the first lock (to read hotkey string) and second lock (to flip `enabled`), another thread could change the hotkey. Very low practical risk since the event tap callback runs on a single thread and config changes come from the UI thread. No security impact — at worst the toggle fires once with a stale hotkey.
+  **Recommendation:** Combine into a single lock scope for clarity and performance, or accept the current pattern with a comment.
+
+- **[ui/src/main.js:268]** `innerHTML` used for mapping add form with hardcoded HTML (no user input interpolated)
+  **Standard:** OWASP A03 — XSS (CWE-79)
+  **Risk:** None in current code — the innerHTML content is a static template string with no interpolated variables. CSP blocks inline script execution regardless. Flagged for awareness only.
+  **Recommendation:** No action needed. The static template is safe, and CSP provides defense-in-depth.
+
+- **[ui/src/overlay.js:86]** `setPosition()` called with values derived from event payload coordinates without bounds validation
+  **Standard:** CWE-20 — Improper Input Validation
+  **Risk:** The `focus-highlight-update` payload comes from the Rust backend (trusted source). The JS does clamp values to screen bounds (lines 74-83). No security risk — the overlay is a click-through, non-interactive window.
+  **Recommendation:** No action needed. Current bounds clamping is sufficient.
+
+- **[ui/src-tauri/src/lib.rs:378-381]** `set_toggle_hotkey` validates length (non-empty, max 50) but not content format
+  **Standard:** CWE-20 — Improper Input Validation
+  **Risk:** A malformed hotkey string (e.g. "---" or "ctrl-ctrl-ctrl") would be saved but never match any key event, effectively disabling the toggle. No crash or security risk — just a usability issue.
+  **Recommendation:** Consider validating that the string has at most one key part (last segment) and recognized modifier names.
+
+## Passed Checks
+
+- **A01 Broken Access Control** — `toggle_enabled`, `set_toggle_hotkey`, `get_enabled` commands only modify local config. No privilege escalation possible. All commands run in the same process context as the user.
+- **A02 Cryptographic Failures** — No cryptography or secrets in new code.
+- **A03 Injection** — All new `innerHTML` uses are either static templates (mapping add form) or already converted to DOM API (`renderExcludedApps` uses `textContent`). `renderMappings` now uses DOM API exclusively (createElement + textContent). No XSS vectors.
+- **A04 Insecure Design** — Toggle hotkey is checked before `enabled` flag, ensuring it always works. Custom mapping remapping happens once per event (no remap loops). AX failure notification uses HashSet for dedup (once per app per session).
+- **A05 Security Misconfiguration** — CSP active. New windows (toggle-feedback, notification) use appropriate properties: toggle-feedback is click-through, notification is intentionally clickable for the "Exclude app" button.
+- **A07 Auth Failures** — N/A (no authentication).
+- **A08 Data Integrity** — `add_custom_mapping` validates: non-empty, max 10 chars, valid mode ("normal"/"insert"/"visual"). `set_toggle_hotkey` validates: non-empty, max 50 chars.
+- **A09 Logging** — No debug logging in new code. No `/tmp/` writes. `eprintln` only for startup errors.
+- **A10 SSRF** — No network requests in new code.
+- **Memory safety** — All new code operates on Rust owned types (String, Vec, HashSet). No raw pointers or unsafe blocks in new code. Mutex usage follows existing patterns.
+- **Frontend safety** — `notification.js` uses `textContent` for app name display (line 29). `toggle-feedback.js` uses `textContent` (line 18). `overlay.js` uses `textContent` (line 18). No DOM XSS.
+- **Test safety** — All 39 new tests are pure unit tests with no I/O, file access, or network. No security surface.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 1 |
+| Low      | 4 |
+| **Total** | **5** |

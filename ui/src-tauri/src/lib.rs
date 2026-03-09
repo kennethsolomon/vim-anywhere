@@ -905,9 +905,12 @@ pub fn run() {
                             EngineResult::ModeChanged(new_mode) => {
                                 // Mode exit (Escape or custom sequence) — suppress and sync
                                 notify_mode(new_mode);
-                                // Set block cursor when entering normal mode (reuse element from writability check)
+                                // Set block cursor when entering normal mode
+                                // Reuse cached element from Escape writability check, or
+                                // fetch fresh for custom sequence path (e.g. "jk")
                                 if new_mode == Mode::Normal {
-                                    if let Some(ref el) = escape_element {
+                                    let el = escape_element.or_else(|| accessibility::get_focused_element());
+                                    if let Some(ref el) = el {
                                         if let Some((loc, _)) = accessibility::get_ax_selected_range(el) {
                                             let _ = accessibility::set_ax_selected_range(el, loc, 1);
                                         }

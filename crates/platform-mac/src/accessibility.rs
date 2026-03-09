@@ -199,16 +199,7 @@ pub fn is_editable_text(element: &AXElement) -> bool {
         }
     }
 
-    unsafe {
-        let attr = CFString::new("AXValue");
-        let mut settable = false;
-        let result = AXUIElementIsAttributeSettable(
-            element.as_ptr(),
-            attr.as_concrete_TypeRef() as _,
-            &mut settable,
-        );
-        result == K_AX_ERROR_SUCCESS && settable
-    }
+    is_ax_value_settable(element)
 }
 
 /// Check if AXValue is settable for the given element.

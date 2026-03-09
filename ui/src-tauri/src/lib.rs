@@ -874,24 +874,29 @@ pub fn run() {
                         // Only allow Escape→Normal when focused on a writable text field.
                         // Non-text elements get real Escape. Contenteditable divs that
                         // don't support AXValue writes (e.g. Lexical editors) also pass through.
-                        if is_escape {
-                            let can_activate = accessibility::get_focused_element()
+                        // Cache the focused element for reuse (writability check + block cursor).
+                        let escape_element = if is_escape {
+                            let element = accessibility::get_focused_element();
+                            let can_activate = element.as_ref()
                                 .map(|el| {
-                                    let role = accessibility::get_ax_role(&el).unwrap_or_default();
+                                    let role = accessibility::get_ax_role(el).unwrap_or_default();
                                     let is_text = match role.as_str() {
                                         "AXTextArea" | "AXTextField" | "AXComboBox" => true,
-                                        _ => accessibility::is_editable_text(&el),
+                                        _ => accessibility::is_editable_text(el),
                                     };
                                     // Also verify we can actually write to the element.
                                     // Some contenteditable divs expose AXValue for reading
                                     // but reject writes — vim motions would silently fail.
-                                    is_text && accessibility::is_ax_value_settable(&el)
+                                    is_text && accessibility::is_ax_value_settable(el)
                                 })
                                 .unwrap_or(false);
                             if !can_activate {
                                 return false; // pass Escape through, stay in Insert
                             }
-                        }
+                            element
+                        } else {
+                            None
+                        };
 
                         let mut dummy_buffer = InMemoryBuffer::new("");
                         let result = eng.handle_key(&key_event, &mut dummy_buffer);
@@ -900,11 +905,11 @@ pub fn run() {
                             EngineResult::ModeChanged(new_mode) => {
                                 // Mode exit (Escape or custom sequence) — suppress and sync
                                 notify_mode(new_mode);
-                                // Set block cursor when entering normal mode (element already confirmed editable above)
+                                // Set block cursor when entering normal mode (reuse element from writability check)
                                 if new_mode == Mode::Normal {
-                                    if let Some(el) = accessibility::get_focused_element() {
-                                        if let Some((loc, _)) = accessibility::get_ax_selected_range(&el) {
-                                            let _ = accessibility::set_ax_selected_range(&el, loc, 1);
+                                    if let Some(ref el) = escape_element {
+                                        if let Some((loc, _)) = accessibility::get_ax_selected_range(el) {
+                                            let _ = accessibility::set_ax_selected_range(el, loc, 1);
                                         }
                                     }
                                 }

@@ -811,9 +811,7 @@ pub fn run() {
                         let cfg = state_for_tap.config.lock().unwrap();
 
                         // Check excluded apps list (terminals, etc.)
-                        if cfg.excluded_apps.iter().any(|a| a == &app_info.bundle_id) {
-                            return false;
-                        }
+                        let is_excluded = cfg.excluded_apps.iter().any(|a| a == &app_info.bundle_id);
 
                         let strategy = if let Some(app_cfg) = cfg.per_app.get(&app_info.bundle_id) {
                             match app_cfg.strategy.as_str() {
@@ -826,8 +824,20 @@ pub fn run() {
                         };
                         drop(cfg);
 
-                        if strategy == app_detection::Strategy::Disabled { return false; }
-                        if app_info.bundle_id == "com.kennethsolomon.vim-anywhere" { return false; }
+                        let should_passthrough = is_excluded
+                            || strategy == app_detection::Strategy::Disabled
+                            || app_info.bundle_id == "com.kennethsolomon.vim-anywhere";
+
+                        if should_passthrough {
+                            // Reset mode + hide overlay/border when switching away
+                            if let Ok(mut eng) = state_for_tap.engine.lock() {
+                                if eng.mode() != Mode::Insert {
+                                    eng.reset_to_insert();
+                                    notify_mode(Mode::Insert);
+                                }
+                            }
+                            return false;
+                        }
                     }
 
                     // Only intercept known vim Ctrl motions (b, d, f, u), pass through rest
@@ -861,19 +871,24 @@ pub fn run() {
                             return false; // pass through backspace, arrows, etc.
                         }
 
-                        // Only allow Escape→Normal when focused on an editable text field.
-                        // Non-text elements (web page body, buttons, etc.) get real Escape.
+                        // Only allow Escape→Normal when focused on a writable text field.
+                        // Non-text elements get real Escape. Contenteditable divs that
+                        // don't support AXValue writes (e.g. Lexical editors) also pass through.
                         if is_escape {
-                            let is_in_text_field = accessibility::get_focused_element()
+                            let can_activate = accessibility::get_focused_element()
                                 .map(|el| {
                                     let role = accessibility::get_ax_role(&el).unwrap_or_default();
-                                    match role.as_str() {
+                                    let is_text = match role.as_str() {
                                         "AXTextArea" | "AXTextField" | "AXComboBox" => true,
                                         _ => accessibility::is_editable_text(&el),
-                                    }
+                                    };
+                                    // Also verify we can actually write to the element.
+                                    // Some contenteditable divs expose AXValue for reading
+                                    // but reject writes — vim motions would silently fail.
+                                    is_text && accessibility::is_ax_value_settable(&el)
                                 })
                                 .unwrap_or(false);
-                            if !is_in_text_field {
+                            if !can_activate {
                                 return false; // pass Escape through, stay in Insert
                             }
                         }

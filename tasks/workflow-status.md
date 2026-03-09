@@ -11,9 +11,9 @@
 | 4 | /execute-plan | done | all 4 phases complete, 52 tests passing |
 | 5 | /commit | done | 835213f + 313bfa3 |
 | 6 | /write-tests | done | 7 new tests, 59 total passing |
-| 7 | /commit | >> next << | conditional |
-| 8 | /debug | not yet | optional |
-| 9 | /security-check | not yet | loop |
+| 7 | /commit | done | 723ed0b |
+| 8 | /debug | skipped | user skipped |
+| 9 | /security-check | >> next << | loop |
 | 10 | /commit | not yet | conditional |
 | 11 | /review | not yet | loop |
 | 12 | /commit | not yet | conditional |

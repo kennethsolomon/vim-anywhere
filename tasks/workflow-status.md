@@ -13,9 +13,9 @@
 | 6 | /write-tests | done | 7 new tests, 59 total passing |
 | 7 | /commit | done | 723ed0b |
 | 8 | /debug | skipped | user skipped |
-| 9 | /security-check | >> next << | loop |
-| 10 | /commit | not yet | conditional |
-| 11 | /review | not yet | loop |
+| 9 | /security-check | done | clean — 0 findings |
+| 10 | /commit | skipped | security was clean |
+| 11 | /review | >> next << | loop |
 | 12 | /commit | not yet | conditional |
 | 13 | /finish-feature | not yet | |
 | 14 | /release | not yet | optional |

@@ -217,3 +217,59 @@ _None found._
 | Medium   | 0 |
 | Low      | 0 |
 | **Total** | **0** |
+
+---
+
+# Security Audit — 2026-03-09 (Bug Fix Commits)
+
+**Scope:** 4 commits on `feature/seamless-integration` since last audit (`835213f`, `313bfa3`, `723ed0b`, `787be6d`)
+**Stack:** Rust / Tauri 2 / HTML+JS
+**Files audited:** 3 source files (`accessibility.rs`, `lib.rs`, `engine_comprehensive.rs`)
+
+## Changes Reviewed
+
+1. `LogicalPosition`/`LogicalSize` for focus border (Retina fix)
+2. Context-aware Escape: editability + writability check before Insert→Normal
+3. Auto-reset to Insert on non-editable focus and excluded app switch
+4. `is_ax_value_settable()` new public function in accessibility.rs
+5. 7 new integration tests for mode management contracts
+
+## Critical (must fix before deploy)
+
+_None found._
+
+## High (fix before production)
+
+_None found._
+
+## Medium (should fix)
+
+_None found._
+
+## Low / Informational
+
+_None found._
+
+## Passed Checks
+
+- **A01 Broken Access Control** — No new attack surface. Mode reset on app switch reduces unintended interception.
+- **A02 Cryptographic Failures** — No cryptography in changed code.
+- **A03 Injection** — No user input interpolation. All new checks use AX API queries with hardcoded attribute strings (`"AXValue"`, `"AXRole"`). No shell commands or string formatting with external data.
+- **A04 Insecure Design** — New `is_ax_value_settable()` check prevents vim activation on elements where writes would silently fail. Defense-in-depth improvement.
+- **A05 Security Misconfiguration** — No new windows, commands, or IPC endpoints added. CSP unchanged.
+- **A09 Logging** — No new logging added. No PII in changed code paths.
+- **A10 SSRF** — No network requests.
+- **Memory safety** — `is_ax_value_settable()` follows the same safe pattern as existing `is_editable_text()`: stack-allocated `settable` bool, no heap allocation, no ownership transfer. `AXUIElementIsAttributeSettable` is a read-only query.
+- **Concurrency** — Engine mutex lock in the app-switch passthrough path (`lib.rs:833`) uses `if let Ok(...)` to gracefully handle poisoned mutex. No deadlock risk: lock is acquired, used, and dropped before `return false`.
+- **Logical correctness** — `notify_mode(Mode::Insert)` called inside the engine lock scope at `lib.rs:836`. `notify_mode` emits Tauri events and hides windows — these are async fire-and-forget operations that don't block the mutex.
+- **Test safety** — New tests are pure unit tests with no I/O, no file access, no network. No security surface.
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| Critical | 0 |
+| High     | 0 |
+| Medium   | 0 |
+| Low      | 0 |
+| **Total** | **0** |
